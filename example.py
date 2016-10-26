@@ -9,7 +9,7 @@ def main():
 
   while True:
     line = x.read('hello> ')
-    if line == 'quit':
+    if line is None:
       break
     elif line.startswith('/'):
       if line.startswith('/historylen'):

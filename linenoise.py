@@ -111,14 +111,13 @@ def unsupported_term():
 # -----------------------------------------------------------------------------
 
 class line_state(object):
-  def __init__(self, ifd, ofd, buf, prompt):
+  def __init__(self, ifd, ofd, prompt):
     self.ifd = ifd                    # Terminal stdin file descriptor
     self.ofd = ofd                    # Terminal stdout file descriptor
-    self.buf = buf                    # Edited line buffer
+    self.buf = []                     # Edited line buffer
     self.prompt = prompt              # Prompt to display
     self.pos = 0                      # Current cursor position
     self.oldpos = 0                   # Previous refresh cursor position
-    self.len = 0                      # Current edited line length
     self.cols = get_columns(ifd, ofd) # Number of columns in terminal
     self.maxrows = 0                  # Maximum num of rows used so far (multiline mode)
     self.history_index = 0            # The history index we are currently editing
@@ -188,33 +187,65 @@ class linenoise(object):
   def refresh_single_line(self):
     pass
 
+  def edit_insert(self, l, c):
+    """insert a character at the current cursor position"""
+    if len(l.buf) == l.pos:
+      l.buf.append(c)
+      l.pos += 1
+      os.write(l.ofd, '%c' % chr(c))
 
-
-
+  def edit(self, ifd, ofd, prompt):
+    """edit a line in raw mode"""
+    l = line_state(ifd, ofd, prompt)
+    # The latest history entry is always our current buffer, initially an empty string
+    self.history_add('')
+    # output the prompt
+    if os.write(ofd, prompt) != len(prompt):
+      return None
+    while True:
+      c = ord(os.read(ifd, 1))
+      if c == ENTER:
+        break
+      elif c == CTRL_C:
+        return None
+      else:
+        self.edit_insert(l, c)
+    return ''.join([chr(c) for c in l.buf])
 
   def read_raw(self, prompt):
     """read a line from stdin in raw mode"""
-    return ''
+    if self.enable_rawmode(STDIN_FILENO) == -1:
+      return None
+    s = self.edit(STDIN_FILENO, STDOUT_FILENO, prompt)
+    self.disable_rawmode(STDIN_FILENO)
+    sys.stdout.write('\r\n')
+    return s
 
   def read_no_tty(self):
     """read a line from a file or pipe"""
-    return ''
+    s = sys.stdin.readline().strip('\n')
+    # return None on EOF
+    return (s, None)[s == '']
 
   def read_unsupported_term(self, prompt):
     """read a line from an unsupported terminal"""
-    return raw_input(prompt)
+    try:
+      s = raw_input(prompt)
+    except EOFError:
+      # return None on EOF
+      s = None
+    return s
 
   def read(self, prompt):
-    """read a line"""
+    """Read a line. Return None on EOF."""
     if not os.isatty(STDIN_FILENO):
       # Not a tty. Read from a file/pipe.
       return self.read_no_tty()
     elif unsupported_term():
-      # Not a terminal we know about. Basic line reading.
+      # Not a terminal we know about. So basic line reading.
       return self.read_unsupported_term(prompt)
     else:
       return self.read_raw(prompt)
-
 
   def print_keycodes(self):
     """Print scan codes on screen for debugging/development purposes"""

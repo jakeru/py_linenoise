@@ -13,6 +13,8 @@ import stat
 import sys
 import atexit
 import termios
+import struct
+import fcntl
 import string
 
 # -----------------------------------------------------------------------------
@@ -21,6 +23,8 @@ DEFAULT_HISTORY_MAX_LEN = 100
 
 STDIN_FILENO = sys.stdin.fileno()
 STDOUT_FILENO = sys.stdout.fileno()
+
+DEFAULT_COLS = 80
 
 # indices within the termios settings
 C_IFLAG = 0
@@ -91,17 +95,19 @@ class linenoise(object):
   def disable_rawmode(self, fd):
     """Disable raw mode"""
     if self.rawmode:
-      termios.tcsetattr(fd,termios.TCSAFLUSH, self.orig_termios)
+      termios.tcsetattr(fd, termios.TCSAFLUSH, self.orig_termios)
       self.rawmode = False
 
   def atexit(self):
     """Restore STDIN to the orignal mode"""
+    sys.stdout.write('\r')
+    sys.stdout.flush()
     self.disable_rawmode(STDIN_FILENO)
 
   def get_cursor_position(self, ifd, ofd):
     """Get the horizontal cursor position"""
     # query the cursor location
-    if os.write(ofd, "\x1b[6n") != 4:
+    if os.write(ofd, '\x1b[6n') != 4:
       return -1
     # read the response: ESC [ rows ; cols R
     buf = []
@@ -117,13 +123,41 @@ class linenoise(object):
     # return the cols
     return int(cols, 10)
 
+  def get_columns(self, ifd, ofd):
+    """Get the number of columns. Assume 80 if it fails."""
+    cols = 0
+    # try to use the ioctl to get the number of cols
+    try:
+      t = fcntl.ioctl(STDOUT_FILENO, termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0))
+      (rows, cols, _, _) = struct.unpack('HHHH', t)
+    except:
+      pass
+    if cols == 0:
+      # the ioctl failed - try using the terminal itself
+      start = self.get_cursor_position(ifd, ofd)
+      if start < 0:
+        return DEFAULT_COLS
+      # Go to right margin and get position
+      if os.write(ofd, '\x1b[999C') != 6:
+        return DEFAULT_COLS
+      cols = self.get_cursor_position(ifd, ofd)
+      if cols < 0:
+        return DEFAULT_COLS
+      # restore the position
+      if cols > start:
+        os.write(ofd, '\x1b[%dD' % (cols - start))
+    return cols
+
+
+
+
+
+
   def test(self):
-    self.get_cursor_position(STDIN_FILENO, STDOUT_FILENO)
-
-
-
-
-
+    if self.enable_rawmode(STDIN_FILENO) != 0:
+      return
+    print self.get_columns(STDIN_FILENO, STDOUT_FILENO)
+    self.disable_rawmode(STDIN_FILENO)
 
 
   def print_keycodes(self):
@@ -191,10 +225,11 @@ class linenoise(object):
   def history_load(self, fname):
     """Load history from a file"""
     self.history = []
-    f = open(fname, 'r')
-    x = f.readlines()
-    f.close()
-    self.history = [l.strip() for l in x]
+    if os.path.isfile(fname):
+      f = open(fname, 'r')
+      x = f.readlines()
+      f.close()
+      self.history = [l.strip() for l in x]
 
 # -----------------------------------------------------------------------------
 

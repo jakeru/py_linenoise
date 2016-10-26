@@ -54,6 +54,9 @@ BACKSPACE = 127 # Backspace
 
 # -----------------------------------------------------------------------------
 
+# if we can't work out how many columns the terminal has use this value
+DEFAULT_COLS = 80
+
 def get_cursor_position(ifd, ofd):
   """Get the horizontal cursor position"""
   # query the cursor location
@@ -70,18 +73,17 @@ def get_cursor_position(ifd, ofd):
   if buf[0] != chr(ESC) or buf[1] != '[' or buf[-1] != 'R':
     return -1
   buf = buf[2:-1]
-  (rows, cols) = ''.join(buf).split(';')
+  (_, cols) = ''.join(buf).split(';')
   # return the cols
   return int(cols, 10)
 
 def get_columns(ifd, ofd):
   """Get the number of columns for the terminal. Assume DEFAULT_COLS if it fails."""
-  DEFAULT_COLS = 80
   cols = 0
   # try using the ioctl to get the number of cols
   try:
     t = fcntl.ioctl(STDOUT_FILENO, termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0))
-    (rows, cols, _, _) = struct.unpack('HHHH', t)
+    (_, cols, _, _) = struct.unpack('HHHH', t)
   except:
     pass
   if cols == 0:
@@ -100,6 +102,16 @@ def get_columns(ifd, ofd):
       os.write(ofd, '\x1b[%dD' % (cols - start))
   return cols
 
+def clear_screen():
+  """Clear the screen"""
+  sys.stdout.write('\x1b[H\x1b[2J')
+  sys.stdout.flush()
+
+def beep():
+  """Beep"""
+  sys.stderr.write('\x07')
+  sys.stderr.flush()
+
 # -----------------------------------------------------------------------------
 
 def unsupported_term():
@@ -111,6 +123,7 @@ def unsupported_term():
 # -----------------------------------------------------------------------------
 
 class line_state(object):
+  """line editing state"""
 
   def __init__(self, ifd, ofd, prompt):
     self.ifd = ifd                    # stdin file descriptor
@@ -198,7 +211,7 @@ class line_state(object):
   def edit_history(self, s):
     """set the line buffer to a history string"""
     self.buf = [ord(c) for c in s]
-    self.posn = len(self.buf)
+    self.pos = len(self.buf)
     self.refresh_line()
 
   def edit_move_left(self):
@@ -210,7 +223,7 @@ class line_state(object):
   def edit_move_right(self):
     """Move cursor to the right"""
     if self.pos != len(self.buf):
-      self.posn += 1
+      self.pos += 1
       self.refresh_line()
 
   def edit_move_home(self):
@@ -248,6 +261,7 @@ class line_state(object):
 # -----------------------------------------------------------------------------
 
 class linenoise(object):
+  """terminal state"""
 
   def __init__(self):
     self.history = [] # list of history strings
@@ -266,7 +280,7 @@ class linenoise(object):
     # modify the original mode
     self.orig_termios = termios.tcgetattr(fd)
     raw = termios.tcgetattr(fd)
-    # input modes: no break, no CR to NL, no parity check, no strip char, no start/stop output control.
+    # input modes: no break, no CR to NL, no parity check, no strip char, no start/stop output control
     raw[C_IFLAG] &= ~(termios.BRKINT | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.IXON)
     # output modes - disable post processing
     raw[C_OFLAG] &= ~(termios.OPOST)
@@ -294,23 +308,6 @@ class linenoise(object):
     sys.stdout.write('\r')
     sys.stdout.flush()
     self.disable_rawmode(STDIN_FILENO)
-
-  def clear_screen(self):
-    """Clear the screen"""
-    os.write(STDOUT_FILENO, '\x1b[H\x1b[2J')
-
-  def beep(self):
-    """Beep"""
-    sys.stderr.write('\x07')
-    sys.stderr.flush()
-
-  def refresh_show_hints(self):
-    pass
-
-
-
-
-
 
 
   def edit(self, ifd, ofd, prompt):
@@ -363,7 +360,7 @@ class linenoise(object):
         ls.delete_to_end()
       elif c == CTRL_L:
         # clear screen
-        self.clear_screen()
+        clear_screen()
         ls.refresh_line()
       elif c == CTRL_N:
         # next history item
@@ -396,29 +393,19 @@ class linenoise(object):
     sys.stdout.write('\r\n')
     return s
 
-  def read_no_tty(self):
-    """read a line from a file or pipe"""
-    s = sys.stdin.readline().strip('\n')
-    # return None on EOF
-    return (s, None)[s == '']
-
-  def read_unsupported_term(self, prompt):
-    """read a line from an unsupported terminal"""
-    try:
-      s = raw_input(prompt)
-    except EOFError:
-      # return None on EOF
-      s = None
-    return s
-
   def read(self, prompt):
-    """Read a line. Return None on EOF."""
+    """Read a line. Return None on EOF"""
     if not os.isatty(STDIN_FILENO):
       # Not a tty. Read from a file/pipe.
-      return self.read_no_tty()
+      s = sys.stdin.readline().strip('\n')
+      return (s, None)[s == '']
     elif unsupported_term():
       # Not a terminal we know about. So basic line reading.
-      return self.read_unsupported_term(prompt)
+      try:
+        s = raw_input(prompt)
+      except EOFError:
+        s = None
+      return s
     else:
       return self.read_raw(prompt)
 
@@ -428,7 +415,7 @@ class linenoise(object):
     print("Press keys to see scan codes. Type 'quit' at any time to exit.")
     if self.enable_rawmode(STDIN_FILENO) != 0:
       return
-    quit = [''] * 4
+    cmd = [''] * 4
     while True:
       # get a character
       c = os.read(STDIN_FILENO, 1)
@@ -444,9 +431,9 @@ class linenoise(object):
       sys.stdout.write("'%s' 0x%02x (%d)\r\n" % (cstr, ord(c), ord(c)))
       sys.stdout.flush()
       # check for quit
-      quit = quit[1:]
-      quit.append(c)
-      if ''.join(quit) == 'quit':
+      cmd = cmd[1:]
+      cmd.append(c)
+      if ''.join(cmd) == 'quit':
         break
     # restore the original mode
     self.disable_rawmode(STDIN_FILENO)

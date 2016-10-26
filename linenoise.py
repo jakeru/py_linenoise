@@ -111,16 +111,139 @@ def unsupported_term():
 # -----------------------------------------------------------------------------
 
 class line_state(object):
+
   def __init__(self, ifd, ofd, prompt):
-    self.ifd = ifd                    # Terminal stdin file descriptor
-    self.ofd = ofd                    # Terminal stdout file descriptor
-    self.buf = []                     # Edited line buffer
-    self.prompt = prompt              # Prompt to display
-    self.pos = 0                      # Current cursor position
-    self.oldpos = 0                   # Previous refresh cursor position
-    self.cols = get_columns(ifd, ofd) # Number of columns in terminal
-    self.maxrows = 0                  # Maximum num of rows used so far (multiline mode)
-    self.history_index = 0            # The history index we are currently editing
+    self.ifd = ifd                    # stdin file descriptor
+    self.ofd = ofd                    # stdout file descriptor
+    self.buf = []                     # line buffer
+    self.prompt = prompt              # prompt string
+    self.pos = 0                      # current cursor position within line buffer
+    self.oldpos = 0                   # previous refresh cursor position
+    self.cols = get_columns(ifd, ofd) # number of columns in terminal
+    self.maxrows = 0                  # maximum num of rows used so far (multiline mode)
+    self.history_index = 0            # history index we are currently editing
+    self.mlmode = False               # are we in multiline mode?
+
+  def refresh_singleline(self):
+    """single line refresh"""
+    seq = []
+    plen = len(self.prompt)
+    blen = len(self.buf)
+    idx = 0
+    pos = self.pos
+
+    while (plen + pos) >= self.cols:
+      idx += 1
+      blen -= 1
+      pos += 1
+
+    while (plen + blen) > self.cols:
+      blen -= 1
+
+    # cursor to the left edge
+    seq.append('\r')
+    # write the prompt
+    seq.append(self.prompt)
+    # write the current buffer content
+    seq.append(''.join([chr(self.buf[i]) for i in range(idx, idx + blen)]))
+    # Show hints (if any)
+    # TODO refreshShowHints(&ab,l,plen);
+    # Erase to right
+    seq.append('\x1b[0K')
+    # Move cursor to original position
+    seq.append('\r\x1b[%dC' % (plen + pos))
+    # write it out
+    os.write(self.ofd, ''.join(seq))
+
+  def refresh_multiline(self):
+    """multiline refresh"""
+    pass
+
+  def refresh_line(self):
+    """refresh the edit line"""
+    if self.mlmode:
+      self.refresh_multiline()
+    else:
+      self.refresh_singleline()
+
+  def edit_delete(self):
+    """delete the character at the current cursor position"""
+    if len(self.buf) > 0 and self.pos < len(self.buf):
+      self.buf.pop(self.pos)
+      self.refresh_line()
+
+  def edit_backspace(self):
+    """delete the character to the left of the current cursor position"""
+    if self.pos > 0 and len(self.buf) > 0:
+      self.buf.pop(self.pos - 1)
+      self.pos -= 1
+      self.refresh_line()
+
+  def edit_insert(self, c):
+    """insert a character at the current cursor position"""
+    self.buf.insert(self.pos, c)
+    self.pos += 1
+    self.refresh_line()
+
+  def edit_swap(self):
+    """swap current character with the previous character"""
+    if self.pos > 0 and self.pos < len(self.buf):
+      tmp = self.buf[self.pos - 1]
+      self.buf[self.pos - 1] = self.buf[self.pos]
+      self.buf[self.pos] = tmp
+      if self.pos != len(self.buf) - 1:
+        self.pos += 1
+      self.refresh_line()
+
+  def edit_history(self, s):
+    """set the line buffer to a history string"""
+    self.buf = [ord(c) for c in s]
+    self.posn = len(self.buf)
+    self.refresh_line()
+
+  def edit_move_left(self):
+    """Move cursor on the left"""
+    if self.pos > 0:
+      self.pos -= 1
+      self.refresh_line()
+
+  def edit_move_right(self):
+    """Move cursor to the right"""
+    if self.pos != len(self.buf):
+      self.posn += 1
+      self.refresh_line()
+
+  def edit_move_home(self):
+    """move to the start of the line buffer"""
+    if self.pos:
+      self.pos = 0
+      self.refresh_line()
+
+  def edit_move_end(self):
+    """move to the end of the line buffer"""
+    if self.pos != len(self.buf):
+      self.pos = len(self.buf)
+      self.refresh_line()
+
+  def delete_line(self):
+    """delete the line"""
+    self.buf = []
+    self.pos = 0
+    self.refresh_line()
+
+  def delete_to_end(self):
+    """delete from the current cursor postion to the end of the line"""
+    self.buf = self.buf[:self.pos]
+    self.refresh_line()
+
+  def delete_prev_word(self):
+    """delete the previosu space delimited word in the line buffer"""
+    # TODO
+    pass
+
+  def __str__(self):
+    """return a string for the line buffer"""
+    return ''.join([chr(c) for c in self.buf])
 
 # -----------------------------------------------------------------------------
 
@@ -131,7 +254,6 @@ class linenoise(object):
     self.history_maxlen = DEFAULT_HISTORY_MAX_LEN # maximum number of history entries
     self.rawmode = False # are we in raw mode?
     self.atexit_registered = False # have we registered a cleanup upon exit function?
-    self.mlmode = False # are we in multiline mode?
 
   def enable_rawmode(self, fd):
     """Enable raw mode"""
@@ -185,101 +307,85 @@ class linenoise(object):
   def refresh_show_hints(self):
     pass
 
-  def refresh_multiline(self, l):
-    """multiline refresh"""
-    pass
 
-  def refresh_singleline(self, l):
-    """single line refresh"""
-    seq = []
-    plen = len(l.prompt)
-    blen = len(l.buf)
-    idx = 0
-    pos = l.pos
 
-    while (plen + pos) >= l.cols:
-      idx += 1
-      blen -= 1
-      pos += 1
 
-    while (plen + blen) > l.cols:
-      blen -= 1
 
-    # cursor to the left edge
-    seq.append('\r')
-    # write the prompt
-    seq.append(l.prompt)
-    # write the current buffer content
-    seq.append(''.join([chr(l.buf[i]) for i in range(idx, idx + blen)]))
-    # Show hints (if any)
-    # TODO refreshShowHints(&ab,l,plen);
-    # Erase to right
-    seq.append('\x1b[0K')
-    # Move cursor to original position
-    seq.append('\r\x1b[%dC' % (plen + pos))
-    # write it out
-    os.write(l.ofd, ''.join(seq))
 
-  def refresh_line(self, l):
-    """refresh the edit line"""
-    if self.mlmode:
-      self.refresh_multiline(l)
-    else:
-      self.refresh_singleline(l)
-
-  def edit_delete(self, l):
-    """remove the character to the right of the current cursor position"""
-    if len(l.buf) > 0 and l.pos < len(l.buf):
-      l.buf.pop(l.pos)
-      self.refresh_line(l)
-
-  def edit_backspace(self, l):
-    """remove the character to the left of the current cursor position"""
-    if l.pos > 0 and len(l.buf) > 0:
-      l.buf.pop(l.pos - 1)
-      l.pos -= 1
-      self.refresh_line(l)
-
-  def edit_insert(self, l, c):
-    """insert a character to the right of the current cursor position"""
-    # insert within the buffer
-    l.buf.insert(l.pos, c)
-    l.pos += 1
-    self.refresh_line(l)
-    # avoid the full line update for the trivial case
-    #if (len(l.buf) == l.pos) and (not self.mlmode) and (len(l.prompt) + len(l.buf) < l.cols):
-    #  os.write(l.ofd, chr(c))
-    #else:
-    #  self.refresh_line(l)
 
   def edit(self, ifd, ofd, prompt):
     """edit a line in raw mode"""
-    l = line_state(ifd, ofd, prompt)
+
+    # create the line state
+    ls = line_state(ifd, ofd, prompt)
     # The latest history entry is always our current buffer, initially an empty string
     self.history_add('')
     # output the prompt
     if os.write(ofd, prompt) != len(prompt):
       return None
+
     while True:
       c = ord(os.read(ifd, 1))
+
       if c == ENTER:
         break
-      elif c == CTRL_C:
-        return None
-      elif c == BACKSPACE or c == CTRL_H:
+      elif c == BACKSPACE:
         # backspace: remove the character to the left of the cursor
-        self.edit_backspace(l)
+        ls.edit_backspace()
+      elif c == CTRL_A:
+        # go to the start of the line
+        ls.edit_move_home()
+      elif c == CTRL_B:
+        # cursor left
+        ls.edit_move_left()
+      elif c == CTRL_C:
+        # return None == EOF
+        return None
       elif c == CTRL_D:
         # delete: remove the character to the right of the cursor.
         # If the line is empty act as an EOF.
-        if len(l.buf):
-          self.edit_delete(l)
+        if len(ls.buf):
+          ls.edit_delete()
         else:
           self.history.pop()
           return None
+      elif c == CTRL_E:
+        # go to the end of the line
+        ls.edit_move_end()
+      elif c == CTRL_F:
+        # cursor right
+        ls.edit_move_right()
+      elif c == CTRL_H:
+        # backspace: remove the character to the left of the cursor
+        ls.edit_backspace()
+      elif c == CTRL_K:
+        # delete to the end of the line
+        ls.delete_to_end()
+      elif c == CTRL_L:
+        # clear screen
+        self.clear_screen()
+        ls.refresh_line()
+      elif c == CTRL_N:
+        # next history item
+        ls.edit_history('next_history')
+      elif c == CTRL_P:
+        # previous history item
+        ls.edit_history('prev_history')
+      elif c == CTRL_T:
+        # swap current character with the previous
+        ls.edit_swap()
+      elif c == CTRL_U:
+        # delete the whole line
+        ls.delete_line()
+      elif c == CTRL_W:
+        # delete previous word
+        ls.delete_prev_word()
       else:
-        self.edit_insert(l, c)
-    return ''.join([chr(c) for c in l.buf])
+        # insert the character into the line buffer
+        ls.edit_insert(c)
+
+    # return the line buffer string
+    return str(ls)
 
   def read_raw(self, prompt):
     """read a line from stdin in raw mode"""

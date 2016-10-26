@@ -24,8 +24,6 @@ DEFAULT_HISTORY_MAX_LEN = 100
 STDIN_FILENO = sys.stdin.fileno()
 STDOUT_FILENO = sys.stdout.fileno()
 
-DEFAULT_COLS = 80
-
 # indices within the termios settings
 C_IFLAG = 0
 C_OFLAG = 1
@@ -56,13 +54,84 @@ BACKSPACE = 127 # Backspace
 
 # -----------------------------------------------------------------------------
 
+def get_cursor_position(ifd, ofd):
+  """Get the horizontal cursor position"""
+  # query the cursor location
+  if os.write(ofd, '\x1b[6n') != 4:
+    return -1
+  # read the response: ESC [ rows ; cols R
+  # rows/cols are decimal number strings
+  buf = []
+  while len(buf) < 32:
+    buf.append(os.read(ifd, 1))
+    if buf[-1] == 'R':
+      break
+  # parse it
+  if buf[0] != chr(ESC) or buf[1] != '[' or buf[-1] != 'R':
+    return -1
+  buf = buf[2:-1]
+  (rows, cols) = ''.join(buf).split(';')
+  # return the cols
+  return int(cols, 10)
+
+def get_columns(ifd, ofd):
+  """Get the number of columns for the terminal. Assume DEFAULT_COLS if it fails."""
+  DEFAULT_COLS = 80
+  cols = 0
+  # try using the ioctl to get the number of cols
+  try:
+    t = fcntl.ioctl(STDOUT_FILENO, termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0))
+    (rows, cols, _, _) = struct.unpack('HHHH', t)
+  except:
+    pass
+  if cols == 0:
+    # the ioctl failed - try using the terminal itself
+    start = get_cursor_position(ifd, ofd)
+    if start < 0:
+      return DEFAULT_COLS
+    # Go to right margin and get position
+    if os.write(ofd, '\x1b[999C') != 6:
+      return DEFAULT_COLS
+    cols = get_cursor_position(ifd, ofd)
+    if cols < 0:
+      return DEFAULT_COLS
+    # restore the position
+    if cols > start:
+      os.write(ofd, '\x1b[%dD' % (cols - start))
+  return cols
+
+# -----------------------------------------------------------------------------
+
+def unsupported_term():
+  """return True if we know we don't support this terminal"""
+  unsupported = ('dumb', 'cons25', 'emacs')
+  term = os.environ.get('TERM', '')
+  return term in unsupported
+
+# -----------------------------------------------------------------------------
+
+class line_state(object):
+  def __init__(self, ifd, ofd, buf, prompt):
+    self.ifd = ifd                    # Terminal stdin file descriptor
+    self.ofd = ofd                    # Terminal stdout file descriptor
+    self.buf = buf                    # Edited line buffer
+    self.prompt = prompt              # Prompt to display
+    self.pos = 0                      # Current cursor position
+    self.oldpos = 0                   # Previous refresh cursor position
+    self.len = 0                      # Current edited line length
+    self.cols = get_columns(ifd, ofd) # Number of columns in terminal
+    self.maxrows = 0                  # Maximum num of rows used so far (multiline mode)
+    self.history_index = 0            # The history index we are currently editing
+
+# -----------------------------------------------------------------------------
+
 class linenoise(object):
 
   def __init__(self):
-    self.history = []
-    self.history_maxlen = DEFAULT_HISTORY_MAX_LEN
-    self.rawmode = False
-    self.atexit_registered = False
+    self.history = [] # list of history strings
+    self.history_maxlen = DEFAULT_HISTORY_MAX_LEN # maximum number of history entries
+    self.rawmode = False # are we in raw mode?
+    self.atexit_registered = False # have we registered a cleanup upon exit function?
 
   def enable_rawmode(self, fd):
     """Enable raw mode"""
@@ -81,7 +150,7 @@ class linenoise(object):
     raw[C_OFLAG] &= ~(termios.OPOST)
     # control modes - set 8 bit chars
     raw[C_CFLAG] |= (termios.CS8)
-    # local modes - choing off, canonical off, no extended functions, no signal chars (^Z,^C)
+    # local modes - echo off, canonical off, no extended functions, no signal chars (^Z,^C)
     raw[C_LFLAG] &= ~(termios.ECHO | termios.ICANON | termios.IEXTEN | termios.ISIG)
     # control chars - set return condition: min number of bytes and timer.
     # We want read to return every single byte, without timeout.
@@ -104,60 +173,47 @@ class linenoise(object):
     sys.stdout.flush()
     self.disable_rawmode(STDIN_FILENO)
 
-  def get_cursor_position(self, ifd, ofd):
-    """Get the horizontal cursor position"""
-    # query the cursor location
-    if os.write(ofd, '\x1b[6n') != 4:
-      return -1
-    # read the response: ESC [ rows ; cols R
-    buf = []
-    while len(buf) < 32:
-      buf.append(os.read(ifd, 1))
-      if buf[-1] == 'R':
-        break
-    # parse it
-    if buf[0] != chr(ESC) or buf[1] != '[' or buf[-1] != 'R':
-      return -1
-    buf = buf[2:-1]
-    (rows, cols) = ''.join(buf).split(';')
-    # return the cols
-    return int(cols, 10)
+  def clear_screen(self):
+    """Clear the screen"""
+    os.write(STDOUT_FILENO, '\x1b[H\x1b[2J')
 
-  def get_columns(self, ifd, ofd):
-    """Get the number of columns. Assume 80 if it fails."""
-    cols = 0
-    # try to use the ioctl to get the number of cols
-    try:
-      t = fcntl.ioctl(STDOUT_FILENO, termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0))
-      (rows, cols, _, _) = struct.unpack('HHHH', t)
-    except:
-      pass
-    if cols == 0:
-      # the ioctl failed - try using the terminal itself
-      start = self.get_cursor_position(ifd, ofd)
-      if start < 0:
-        return DEFAULT_COLS
-      # Go to right margin and get position
-      if os.write(ofd, '\x1b[999C') != 6:
-        return DEFAULT_COLS
-      cols = self.get_cursor_position(ifd, ofd)
-      if cols < 0:
-        return DEFAULT_COLS
-      # restore the position
-      if cols > start:
-        os.write(ofd, '\x1b[%dD' % (cols - start))
-    return cols
+  def beep(self):
+    """Beep"""
+    sys.stderr.write('\x07')
+    sys.stderr.flush()
+
+  def refresh_show_hints(self):
+    pass
+
+  def refresh_single_line(self):
+    pass
 
 
 
 
 
+  def read_raw(self, prompt):
+    """read a line from stdin in raw mode"""
+    return ''
 
-  def test(self):
-    if self.enable_rawmode(STDIN_FILENO) != 0:
-      return
-    print self.get_columns(STDIN_FILENO, STDOUT_FILENO)
-    self.disable_rawmode(STDIN_FILENO)
+  def read_no_tty(self):
+    """read a line from a file or pipe"""
+    return ''
+
+  def read_unsupported_term(self, prompt):
+    """read a line from an unsupported terminal"""
+    return raw_input(prompt)
+
+  def read(self, prompt):
+    """read a line"""
+    if not os.isatty(STDIN_FILENO):
+      # Not a tty. Read from a file/pipe.
+      return self.read_no_tty()
+    elif unsupported_term():
+      # Not a terminal we know about. Basic line reading.
+      return self.read_unsupported_term(prompt)
+    else:
+      return self.read_raw(prompt)
 
 
   def print_keycodes(self):

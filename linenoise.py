@@ -131,6 +131,7 @@ class linenoise(object):
     self.history_maxlen = DEFAULT_HISTORY_MAX_LEN # maximum number of history entries
     self.rawmode = False # are we in raw mode?
     self.atexit_registered = False # have we registered a cleanup upon exit function?
+    self.mlmode = False # are we in multiline mode?
 
   def enable_rawmode(self, fd):
     """Enable raw mode"""
@@ -184,15 +185,72 @@ class linenoise(object):
   def refresh_show_hints(self):
     pass
 
-  def refresh_single_line(self):
+  def refresh_multiline(self, l):
+    """multiline refresh"""
     pass
 
+  def refresh_singleline(self, l):
+    """single line refresh"""
+    seq = []
+    plen = len(l.prompt)
+    blen = len(l.buf)
+    idx = 0
+    pos = l.pos
+
+    while (plen + pos) >= l.cols:
+      idx += 1
+      blen -= 1
+      pos += 1
+
+    while (plen + blen) > l.cols:
+      blen -= 1
+
+    # cursor to the left edge
+    seq.append('\r')
+    # write the prompt
+    seq.append(l.prompt)
+    # write the current buffer content
+    seq.append(''.join([chr(l.buf[i]) for i in range(idx, idx + blen)]))
+    # Show hints (if any)
+    # TODO refreshShowHints(&ab,l,plen);
+    # Erase to right
+    seq.append('\x1b[0K')
+    # Move cursor to original position
+    seq.append('\r\x1b[%dC' % (plen + pos))
+    # write it out
+    os.write(l.ofd, ''.join(seq))
+
+  def refresh_line(self, l):
+    """refresh the edit line"""
+    if self.mlmode:
+      self.refresh_multiline(l)
+    else:
+      self.refresh_singleline(l)
+
+  def edit_delete(self, l):
+    """remove the character to the right of the current cursor position"""
+    if len(l.buf) > 0 and l.pos < len(l.buf):
+      l.buf.pop(l.pos)
+      self.refresh_line(l)
+
+  def edit_backspace(self, l):
+    """remove the character to the left of the current cursor position"""
+    if l.pos > 0 and len(l.buf) > 0:
+      l.buf.pop(l.pos - 1)
+      l.pos -= 1
+      self.refresh_line(l)
+
   def edit_insert(self, l, c):
-    """insert a character at the current cursor position"""
-    if len(l.buf) == l.pos:
-      l.buf.append(c)
-      l.pos += 1
-      os.write(l.ofd, '%c' % chr(c))
+    """insert a character to the right of the current cursor position"""
+    # insert within the buffer
+    l.buf.insert(l.pos, c)
+    l.pos += 1
+    self.refresh_line(l)
+    # avoid the full line update for the trivial case
+    #if (len(l.buf) == l.pos) and (not self.mlmode) and (len(l.prompt) + len(l.buf) < l.cols):
+    #  os.write(l.ofd, chr(c))
+    #else:
+    #  self.refresh_line(l)
 
   def edit(self, ifd, ofd, prompt):
     """edit a line in raw mode"""
@@ -208,6 +266,17 @@ class linenoise(object):
         break
       elif c == CTRL_C:
         return None
+      elif c == BACKSPACE or c == CTRL_H:
+        # backspace: remove the character to the left of the cursor
+        self.edit_backspace(l)
+      elif c == CTRL_D:
+        # delete: remove the character to the right of the cursor.
+        # If the line is empty act as an EOF.
+        if len(l.buf):
+          self.edit_delete(l)
+        else:
+          self.history.pop()
+          return None
       else:
         self.edit_insert(l, c)
     return ''.join([chr(c) for c in l.buf])

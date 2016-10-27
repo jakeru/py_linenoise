@@ -19,8 +19,6 @@ import string
 
 # -----------------------------------------------------------------------------
 
-DEFAULT_HISTORY_MAX_LEN = 100
-
 STDIN_FILENO = sys.stdin.fileno()
 STDOUT_FILENO = sys.stdout.fileno()
 
@@ -54,7 +52,7 @@ BACKSPACE = 127 # Backspace
 
 # -----------------------------------------------------------------------------
 
-# if we can't work out how many columns the terminal has use this value
+# Use this value if we can't work out how many columns the terminal has.
 DEFAULT_COLS = 80
 
 def get_cursor_position(ifd, ofd):
@@ -134,7 +132,7 @@ class line_state(object):
     self.oldpos = 0                   # previous refresh cursor position
     self.cols = get_columns(ifd, ofd) # number of columns in terminal
     self.maxrows = 0                  # maximum num of rows used so far (multiline mode)
-    self.history_index = 0            # history index we are currently editing
+    self.history_idx = 0              # history index we are currently editing, 0 is the LAST entry
     self.mlmode = False               # are we in multiline mode?
 
   def refresh_singleline(self):
@@ -206,8 +204,10 @@ class line_state(object):
         self.pos += 1
       self.refresh_line()
 
-  def edit_history(self, s):
-    """set the line buffer to a history string"""
+  def edit_set(self, s):
+    """set the line buffer to a string"""
+    if s is None:
+      return
     self.buf = [ord(c) for c in s]
     self.pos = len(self.buf)
     self.refresh_line()
@@ -262,19 +262,20 @@ class linenoise(object):
   """terminal state"""
 
   def __init__(self):
-    self.history = [] # list of history strings
-    self.history_maxlen = DEFAULT_HISTORY_MAX_LEN # maximum number of history entries
-    self.rawmode = False # are we in raw mode?
-    self.atexit_registered = False # have we registered a cleanup upon exit function?
+    self.history = []         # list of history strings
+    self.history_maxlen = 32  # maximum number of history entries (default)
+    self.rawmode = False      # are we in raw mode?
+    self.atexit_flag = False  # have we registered a cleanup upon exit function?
+    self.orig_termios = None  # saved termios attributes
 
   def enable_rawmode(self, fd):
     """Enable raw mode"""
     if not os.isatty(fd):
       return -1
-    # cleanup upon disaster
-    if not self.atexit_registered:
+    # ensure cleanup upon exit/disaster
+    if not self.atexit_flag:
       atexit.register(self.atexit)
-      self.atexit_registered = True
+      self.atexit_flag = True
     # modify the original mode
     self.orig_termios = termios.tcgetattr(fd)
     raw = termios.tcgetattr(fd)
@@ -307,7 +308,6 @@ class linenoise(object):
     sys.stdout.flush()
     self.disable_rawmode(STDIN_FILENO)
 
-
   def edit(self, ifd, ofd, prompt):
     """edit a line in raw mode"""
     # create the line state
@@ -332,14 +332,19 @@ class linenoise(object):
         if s0 == '[':
           # ESC [ sequence
           if s1 >= '0' and s1 <= '9':
-            pass
+            # Extended escape, read additional byte.
+            s2 = os.read(ifd, 1)
+            if s2 == '~':
+              if s1 == '3':
+                # delete
+                ls.edit_delete()
           else:
             if s1 == 'A':
               # cursor up
-              ls.edit_history('prev_history')
+              ls.edit_set(self.history_prev(ls))
             elif s1 == 'B':
               # cursor down
-              ls.edit_history('next_history')
+              ls.edit_set(self.history_next(ls))
             elif s1 == 'C':
               # cursor right
               ls.edit_move_right()
@@ -397,10 +402,10 @@ class linenoise(object):
         ls.refresh_line()
       elif c == CTRL_N:
         # next history item
-        ls.edit_history('next_history')
+        ls.edit_set(self.history_next(ls))
       elif c == CTRL_P:
         # previous history item
-        ls.edit_history('prev_history')
+        ls.edit_set(self.history_prev(ls))
       elif c == CTRL_T:
         # swap current character with the previous
         ls.edit_swap()
@@ -430,7 +435,7 @@ class linenoise(object):
       s = sys.stdin.readline().strip('\n')
       return (s, None)[s == '']
     elif unsupported_term():
-      # Not a terminal we know about. So basic line reading.
+      # Not a terminal we know about, so basic line reading.
       try:
         s = raw_input(prompt)
       except EOFError:
@@ -468,11 +473,43 @@ class linenoise(object):
     # restore the original mode
     self.disable_rawmode(STDIN_FILENO)
 
+  def history_set(self, idx, line):
+    """set a history entry by index number"""
+    self.history[len(self.history) - 1 - idx] = line
+
+  def history_get(self, idx):
+    """get a history entry by index number"""
+    return self.history[len(self.history) - 1 - idx]
+
+  def history_next(self, ls):
+    """return next history item"""
+    if len(self.history) == 0:
+      return None
+    # update the current history entry with the line buffer
+    self.history_set(ls.history_idx, str(ls))
+    ls.history_idx -= 1
+    # next history item
+    if ls.history_idx < 0:
+      ls.history_idx = 0
+    return self.history_get(ls.history_idx)
+
+  def history_prev(self, ls):
+    """return previous history item"""
+    if len(self.history) == 0:
+      return None
+    # update the current history entry with the line buffer
+    self.history_set(ls.history_idx, str(ls))
+    ls.history_idx += 1
+    # previous history item
+    if ls.history_idx >= len(self.history):
+      ls.history_idx = len(self.history) - 1
+    return self.history_get(ls.history_idx)
+
   def history_add(self, line):
     """Add a new entry to the history"""
     if self.history_maxlen == 0:
       return
-    # don't add duplicated lines
+    # don't add duplicate lines
     for l in self.history:
       if l == line:
         return
@@ -498,7 +535,7 @@ class linenoise(object):
     f = open(fname, 'w')
     os.umask(old_umask)
     os.chmod(fname, stat.S_IRUSR | stat.S_IWUSR)
-    f.write('\n'.join(self.history))
+    f.write('%s\n' % '\n'.join(self.history))
     f.close()
 
   def history_load(self, fname):

@@ -1,2 +1,5 @@
-# pycli
-Python based CLI with tab completion, help and multi-level menus.
+# py_linenoise 
+
+A port of linenoise to Python
+
+See: http://github.com/antirez/linenoise

@@ -144,15 +144,13 @@ class line_state(object):
     blen = len(self.buf)
     idx = 0
     pos = self.pos
-
+    # scroll the characters to the left if we are at max columns
     while (plen + pos) >= self.cols:
       idx += 1
       blen -= 1
-      pos += 1
-
+      pos -= 1
     while (plen + blen) > self.cols:
       blen -= 1
-
     # cursor to the left edge
     seq.append('\r')
     # write the prompt
@@ -250,7 +248,7 @@ class line_state(object):
     self.refresh_line()
 
   def delete_prev_word(self):
-    """delete the previosu space delimited word in the line buffer"""
+    """delete the previous space delimited word in the line buffer"""
     # TODO
     pass
 
@@ -312,7 +310,6 @@ class linenoise(object):
 
   def edit(self, ifd, ofd, prompt):
     """edit a line in raw mode"""
-
     # create the line state
     ls = line_state(ifd, ofd, prompt)
     # The latest history entry is always our current buffer, initially an empty string
@@ -320,15 +317,51 @@ class linenoise(object):
     # output the prompt
     if os.write(ofd, prompt) != len(prompt):
       return None
-
     while True:
       c = ord(os.read(ifd, 1))
-
       if c == ENTER:
-        break
+        self.history.pop()
+        return str(ls)
       elif c == BACKSPACE:
         # backspace: remove the character to the left of the cursor
         ls.edit_backspace()
+      elif c == ESC:
+        # escape sequence
+        s0 = os.read(ifd, 1)
+        s1 = os.read(ifd, 1)
+        if s0 == '[':
+          # ESC [ sequence
+          if s1 >= '0' and s1 <= '9':
+            pass
+          else:
+            if s1 == 'A':
+              # cursor up
+              ls.edit_history('prev_history')
+            elif s1 == 'B':
+              # cursor down
+              ls.edit_history('next_history')
+            elif s1 == 'C':
+              # cursor right
+              ls.edit_move_right()
+            elif s1 == 'D':
+              # cursor left
+              ls.edit_move_left()
+            elif s1 == 'H':
+              # cursor home
+              ls.edit_move_home()
+            elif s1 == 'F':
+              # cursor end
+              ls.edit_move_end()
+        elif s0 == '0':
+          # ESC 0 sequence
+          if s1 == 'H':
+            # cursor home
+            ls.edit_move_home()
+          elif s1 == 'F':
+            # cursor end
+            ls.edit_move_end()
+        else:
+          pass
       elif c == CTRL_A:
         # go to the start of the line
         ls.edit_move_home()
@@ -380,9 +413,6 @@ class linenoise(object):
       else:
         # insert the character into the line buffer
         ls.edit_insert(c)
-
-    # return the line buffer string
-    return str(ls)
 
   def read_raw(self, prompt):
     """read a line from stdin in raw mode"""
@@ -443,13 +473,13 @@ class linenoise(object):
     if self.history_maxlen == 0:
       return
     # don't add duplicated lines
-    for prev_line in self.history:
-      if line == prev_line:
+    for l in self.history:
+      if l == line:
         return
     # add the line to the history
     if len(self.history) == self.history_maxlen:
       # remove the first entry
-      self.history = self.history[1:]
+      self.history.pop(0)
     self.history.append(line)
 
   def history_set_maxlen(self, n):

@@ -21,10 +21,7 @@ import string
 
 # -----------------------------------------------------------------------------
 
-STDIN_FILENO = sys.stdin.fileno()
-STDOUT_FILENO = sys.stdout.fileno()
-
-# indices within the termios settings
+# indices within the termios array
 C_IFLAG = 0
 C_OFLAG = 1
 C_CFLAG = 2
@@ -54,8 +51,50 @@ BACKSPACE = 127 # Backspace
 
 # -----------------------------------------------------------------------------
 
+# Key Codes
+_KEY_NULL = chr(0)
+_KEY_CTRL_A = chr(1)
+_KEY_CTRL_B = chr(2)
+_KEY_CTRL_C = chr(3)
+_KEY_CTRL_D = chr(4)
+_KEY_CTRL_E = chr(5)
+_KEY_CTRL_F = chr(6)
+_KEY_CTRL_H = chr(8)
+_KEY_TAB = chr(9)
+_KEY_CTRL_K = chr(11)
+_KEY_CTRL_L = chr(12)
+_KEY_ENTER = chr(13)
+_KEY_CTRL_N = chr(14)
+_KEY_CTRL_P = chr(16)
+_KEY_CTRL_T = chr(20)
+_KEY_CTRL_U = chr(21)
+_KEY_CTRL_W = chr(23)
+_KEY_ESC = chr(27)
+_KEY_BS = chr(127)
+
+# -----------------------------------------------------------------------------
+
+_STDIN = sys.stdin.fileno()
+_STDOUT = sys.stdout.fileno()
+_STDERR = sys.stderr.fileno()
+
+def _getc(fd, timeout=-1):
+  """
+    read a single character from a file (with timeout)
+    timeout = 0 : return immediately
+    timeout < 0 : wait for the character (block)
+    timeout > 0 : wait for timeout seconds
+  """
+  pass
+
+def _puts(fd, s):
+  """write a string to a file, return the number of characters written"""
+  return os.write(fd, s)
+
+# -----------------------------------------------------------------------------
+
 # Use this value if we can't work out how many columns the terminal has.
-DEFAULT_COLS = 80
+_DEFAULT_COLS = 80
 
 def get_cursor_position(ifd, ofd):
   """Get the horizontal cursor position"""
@@ -78,11 +117,11 @@ def get_cursor_position(ifd, ofd):
   return int(cols, 10)
 
 def get_columns(ifd, ofd):
-  """Get the number of columns for the terminal. Assume DEFAULT_COLS if it fails."""
+  """Get the number of columns for the terminal. Assume _DEFAULT_COLS if it fails."""
   cols = 0
   # try using the ioctl to get the number of cols
   try:
-    t = fcntl.ioctl(STDOUT_FILENO, termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0))
+    t = fcntl.ioctl(_STDOUT, termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0))
     (_, cols, _, _) = struct.unpack('HHHH', t)
   except:
     pass
@@ -90,13 +129,13 @@ def get_columns(ifd, ofd):
     # the ioctl failed - try using the terminal itself
     start = get_cursor_position(ifd, ofd)
     if start < 0:
-      return DEFAULT_COLS
+      return _DEFAULT_COLS
     # Go to right margin and get position
     if os.write(ofd, '\x1b[999C') != 6:
-      return DEFAULT_COLS
+      return _DEFAULT_COLS
     cols = get_cursor_position(ifd, ofd)
     if cols < 0:
-      return DEFAULT_COLS
+      return _DEFAULT_COLS
     # restore the position
     if cols > start:
       os.write(ofd, '\x1b[%dD' % (cols - start))
@@ -367,7 +406,7 @@ class linenoise(object):
     """Restore STDIN to the orignal mode"""
     sys.stdout.write('\r')
     sys.stdout.flush()
-    self.disable_rawmode(STDIN_FILENO)
+    self.disable_rawmode(_STDIN)
 
   def edit(self, ifd, ofd, prompt):
     """edit a line in raw mode"""
@@ -493,16 +532,16 @@ class linenoise(object):
 
   def read_raw(self, prompt):
     """read a line from stdin in raw mode"""
-    if self.enable_rawmode(STDIN_FILENO) == -1:
+    if self.enable_rawmode(_STDIN) == -1:
       return None
-    s = self.edit(STDIN_FILENO, STDOUT_FILENO, prompt)
-    self.disable_rawmode(STDIN_FILENO)
+    s = self.edit(_STDIN, _STDOUT, prompt)
+    self.disable_rawmode(_STDIN)
     sys.stdout.write('\r\n')
     return s
 
   def read(self, prompt):
     """Read a line. Return None on EOF"""
-    if not os.isatty(STDIN_FILENO):
+    if not os.isatty(_STDIN):
       # Not a tty. Read from a file/pipe.
       s = sys.stdin.readline().strip('\n')
       return (s, None)[s == '']
@@ -520,12 +559,12 @@ class linenoise(object):
     """Print scan codes on screen for debugging/development purposes"""
     print("Linenoise key codes debugging mode.")
     print("Press keys to see scan codes. Type 'quit' at any time to exit.")
-    if self.enable_rawmode(STDIN_FILENO) != 0:
+    if self.enable_rawmode(_STDIN) != 0:
       return
     cmd = [''] * 4
     while True:
       # get a character
-      c = os.read(STDIN_FILENO, 1)
+      c = os.read(_STDIN, 1)
       if c == '':
         continue
       # display the character
@@ -543,7 +582,7 @@ class linenoise(object):
       if ''.join(cmd) == 'quit':
         break
     # restore the original mode
-    self.disable_rawmode(STDIN_FILENO)
+    self.disable_rawmode(_STDIN)
 
   def set_completion_callback(self, fn):
     """set the completion callback function"""

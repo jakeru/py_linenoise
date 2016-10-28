@@ -28,27 +28,6 @@ C_CFLAG = 2
 C_LFLAG = 3
 C_CC = 6
 
-# key codes
-KEY_NULL = 0    # NULL
-CTRL_A = 1      # Ctrl+a
-CTRL_B = 2      # Ctrl-b
-CTRL_C = 3      # Ctrl-c
-CTRL_D = 4      # Ctrl-d
-CTRL_E = 5      # Ctrl-e
-CTRL_F = 6      # Ctrl-f
-CTRL_H = 8      # Ctrl-h
-TAB = 9         # Tab
-CTRL_K = 11     # Ctrl+k
-CTRL_L = 12     # Ctrl+l
-ENTER = 13      # Enter
-CTRL_N = 14     # Ctrl-n
-CTRL_P = 16     # Ctrl-p
-CTRL_T = 20     # Ctrl-t
-CTRL_U = 21     # Ctrl+u
-CTRL_W = 23     # Ctrl+w
-ESC = 27        # Escape
-BACKSPACE = 127 # Backspace
-
 # -----------------------------------------------------------------------------
 
 # Key Codes
@@ -109,7 +88,7 @@ def get_cursor_position(ifd, ofd):
     if buf[-1] == 'R':
       break
   # parse it
-  if buf[0] != chr(ESC) or buf[1] != '[' or buf[-1] != 'R':
+  if buf[0] != _KEY_ESC or buf[1] != '[' or buf[-1] != 'R':
     return -1
   buf = buf[2:-1]
   (_, cols) = ''.join(buf).split(';')
@@ -163,12 +142,6 @@ def unsupported_term():
 
 # -----------------------------------------------------------------------------
 
-def str2ord(s):
-  """convert a string to an ordinal list"""
-  return [ord(c) for c in s]
-
-# -----------------------------------------------------------------------------
-
 class line_state(object):
   """line editing state"""
 
@@ -203,7 +176,7 @@ class line_state(object):
     # write the prompt
     seq.append(self.prompt)
     # write the current buffer content
-    seq.append(''.join([chr(self.buf[i]) for i in range(idx, idx + blen)]))
+    seq.append(''.join([self.buf[i] for i in range(idx, idx + blen)]))
     # Show hints (if any)
     # TODO refreshShowHints(&ab,l,plen);
     # Erase to right
@@ -257,7 +230,7 @@ class line_state(object):
     """set the line buffer to a string"""
     if s is None:
       return
-    self.buf = [ord(c) for c in s]
+    self.buf = list(s)
     self.pos = len(self.buf)
     self.refresh_line()
 
@@ -319,7 +292,7 @@ class line_state(object):
           saved_buf = self.buf
           saved_pos = self.pos
           # show the completion
-          self.buf = str2ord(lc[idx])
+          self.buf = list(lc[idx])
           self.pos = len(self.buf)
           self.refresh_line()
           # restore the line buffer
@@ -329,13 +302,13 @@ class line_state(object):
           # show the original buffer
           self.refresh_line()
         # navigate through the completions
-        c = ord(os.read(self.ifd, 1))
-        if c == TAB:
+        c = os.read(self.ifd, 1)
+        if c == _KEY_TAB:
           # loop through the completions
           idx = (idx + 1) % (len(lc) + 1)
           if idx == len(lc):
             beep()
-        elif c == ESC:
+        elif c == _KEY_ESC:
           # re-show the original buffer
           if idx < len(lc):
             self.refresh_line()
@@ -343,7 +316,7 @@ class line_state(object):
         else:
           # update the buffer and return
           if idx < len(lc):
-            self.buf = str2ord(lc[idx])
+            self.buf = list(lc[idx])
             self.pos = len(self.buf)
           stop = True
     # return the last character read
@@ -351,7 +324,7 @@ class line_state(object):
 
   def __str__(self):
     """return a string for the line buffer"""
-    return ''.join([chr(c) for c in self.buf])
+    return ''.join(self.buf)
 
 # -----------------------------------------------------------------------------
 
@@ -418,25 +391,25 @@ class linenoise(object):
     if os.write(ofd, prompt) != len(prompt):
       return None
     while True:
-      c = ord(os.read(ifd, 1))
+      c = os.read(ifd, 1)
 
       # Autocomplete when the callback is set. It returns < 0 when
       # there was an error reading from fd. Otherwise it will return the
       # character that should be handled next.
-      if c == TAB and self.completion_callback is not None:
+      if c == _KEY_TAB and self.completion_callback is not None:
         c = ls.complete_line(self.completion_callback)
         if c < 0:
           return str(ls)
         if c == 0:
           continue
 
-      if c == ENTER:
+      if c == _KEY_ENTER:
         self.history.pop()
         return str(ls)
-      elif c == BACKSPACE:
+      elif c == _KEY_BS:
         # backspace: remove the character to the left of the cursor
         ls.edit_backspace()
-      elif c == ESC:
+      elif c == _KEY_ESC:
         # escape sequence
         s0 = os.read(ifd, 1)
         s1 = os.read(ifd, 1)
@@ -478,16 +451,16 @@ class linenoise(object):
             ls.edit_move_end()
         else:
           pass
-      elif c == CTRL_A:
+      elif c == _KEY_CTRL_A:
         # go to the start of the line
         ls.edit_move_home()
-      elif c == CTRL_B:
+      elif c == _KEY_CTRL_B:
         # cursor left
         ls.edit_move_left()
-      elif c == CTRL_C:
+      elif c == _KEY_CTRL_C:
         # return None == EOF
         return None
-      elif c == CTRL_D:
+      elif c == _KEY_CTRL_D:
         # delete: remove the character to the right of the cursor.
         # If the line is empty act as an EOF.
         if len(ls.buf):
@@ -495,35 +468,35 @@ class linenoise(object):
         else:
           self.history.pop()
           return None
-      elif c == CTRL_E:
+      elif c == _KEY_CTRL_E:
         # go to the end of the line
         ls.edit_move_end()
-      elif c == CTRL_F:
+      elif c == _KEY_CTRL_F:
         # cursor right
         ls.edit_move_right()
-      elif c == CTRL_H:
+      elif c == _KEY_CTRL_H:
         # backspace: remove the character to the left of the cursor
         ls.edit_backspace()
-      elif c == CTRL_K:
+      elif c == _KEY_CTRL_K:
         # delete to the end of the line
         ls.delete_to_end()
-      elif c == CTRL_L:
+      elif c == _KEY_CTRL_L:
         # clear screen
         clear_screen()
         ls.refresh_line()
-      elif c == CTRL_N:
+      elif c == _KEY_CTRL_N:
         # next history item
         ls.edit_set(self.history_next(ls))
-      elif c == CTRL_P:
+      elif c == _KEY_CTRL_P:
         # previous history item
         ls.edit_set(self.history_prev(ls))
-      elif c == CTRL_T:
+      elif c == _KEY_CTRL_T:
         # swap current character with the previous
         ls.edit_swap()
-      elif c == CTRL_U:
+      elif c == _KEY_CTRL_U:
         # delete the whole line
         ls.delete_line()
-      elif c == CTRL_W:
+      elif c == _KEY_CTRL_W:
         # delete previous word
         ls.delete_prev_word()
       else:
@@ -572,8 +545,8 @@ class linenoise(object):
         m = {'\r': '\\r', '\n': '\\n', '\t': '\\t'}
         cstr = m.get(c, c)
       else:
-        m = {0x1b: 'ESC'}
-        cstr = m.get(ord(c), '?')
+        m = {_KEY_ESC: 'ESC'}
+        cstr = m.get(c, '?')
       sys.stdout.write("'%s' 0x%02x (%d)\r\n" % (cstr, ord(c), ord(c)))
       sys.stdout.flush()
       # check for quit

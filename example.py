@@ -1,14 +1,51 @@
 #!/usr/bin/python
 
 import linenoise
+import sys
+
+def completion(s):
+  pass
+
+def hints(s):
+  if s == 'hello':
+    # color, bold, string
+    return (35, False, ' World')
+  return None
 
 def main():
+  ln = linenoise.linenoise()
 
-  x = linenoise.linenoise()
-  x.history_load('history.txt')
+  # Parse options
+  argc = len(sys.argv)
+  idx = 0
+  while argc > 1:
+    argc -= 1
+    idx += 1
+    argv = sys.argv[idx]
+    if argv == '--multiline':
+      ln.set_multiLine(True)
+      sys.stdout.write('Multi-line mode enabled.\n')
+    elif argv == '--keycodes':
+      ln.print_keycodes()
+      sys.exit(0)
+    else:
+      sys.stderr.write('Usage: %s [--multiline] [--keycodes]\n' % sys.argv[0])
+      sys.exit(1)
 
+  # Set the completion callback. This will be called
+  # every time the user uses the <tab> key.
+  ln.set_completion_callback(completion)
+  ln.set_hints_callback(hints)
+
+  # Load history from file. The history file is just a plain text file
+  # where entries are separated by newlines.
+  ln.history_load('history.txt')
+
+  # Now this is the main loop of the typical linenoise-based application.
+  # The call to linenoise() will block until the user types something
+  # and presses enter.
   while True:
-    line = x.read('hello> ')
+    line = ln.read('hello> ')
     if line is None:
       break
     elif line.startswith('/'):
@@ -16,14 +53,16 @@ def main():
         l = line.split(' ')
         if len(l) >= 2:
           n = int(l[1], 10)
-          x.history_set_maxlen(n)
+          ln.history_set_maxlen(n)
         else:
           print('no history length')
       else:
         print('unrecognized command: %s' % line)
     elif len(line):
       print("echo: '%s'" % line)
-      x.history_add(line)
-      x.history_save("history.txt")
+      ln.history_add(line)
+      ln.history_save("history.txt")
+
+  sys.exit(0)
 
 main()

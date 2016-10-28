@@ -473,6 +473,14 @@ class linenoise(object):
     # restore the original mode
     self.disable_rawmode(STDIN_FILENO)
 
+  def set_completion_callback(self, f):
+    """set the completion callback function"""
+    pass
+
+  def set_hints_callback(self, f):
+    """set the hints callback function"""
+    pass
+
   def history_set(self, idx, line):
     """set a history entry by index number"""
     self.history[len(self.history) - 1 - idx] = line

@@ -3,7 +3,9 @@
 
 linenoise for python
 
-See: http://github.com/antirez/linenoise
+See: https://github.com/deadsy/py_linenoise
+
+Based on: http://github.com/antirez/linenoise
 
 """
 # -----------------------------------------------------------------------------
@@ -100,6 +102,8 @@ def get_columns(ifd, ofd):
       os.write(ofd, '\x1b[%dD' % (cols - start))
   return cols
 
+# -----------------------------------------------------------------------------
+
 def clear_screen():
   """Clear the screen"""
   sys.stdout.write('\x1b[H\x1b[2J')
@@ -120,10 +124,16 @@ def unsupported_term():
 
 # -----------------------------------------------------------------------------
 
+def str2ord(s):
+  """convert a string to an ordinal list"""
+  return [ord(c) for c in s]
+
+# -----------------------------------------------------------------------------
+
 class line_state(object):
   """line editing state"""
 
-  def __init__(self, ifd, ofd, prompt):
+  def __init__(self, ifd, ofd, prompt, mlmode):
     self.ifd = ifd                    # stdin file descriptor
     self.ofd = ofd                    # stdout file descriptor
     self.buf = []                     # line buffer
@@ -133,7 +143,7 @@ class line_state(object):
     self.cols = get_columns(ifd, ofd) # number of columns in terminal
     self.maxrows = 0                  # maximum num of rows used so far (multiline mode)
     self.history_idx = 0              # history index we are currently editing, 0 is the LAST entry
-    self.mlmode = False               # are we in multiline mode?
+    self.mlmode = mlmode              # are we in multiline mode?
 
   def refresh_singleline(self):
     """single line refresh"""
@@ -252,6 +262,54 @@ class line_state(object):
     # TODO
     pass
 
+  def complete_line(self, callback):
+    """show completions for the current line"""
+    c = 0
+    # get a list of line completions
+    lc = callback(str(self))
+    if lc is None or len(lc) == 0:
+      # no line completions
+      beep()
+    else:
+      # navigate and display the line completions
+      stop = False
+      idx = 0
+      while not stop:
+        if idx < len(lc):
+          # show the completion
+          saved_buf = self.buf
+          saved_pos = self.pos
+          # show the completion
+          self.buf = str2ord(lc[idx])
+          self.pos = len(self.buf)
+          self.refresh_line()
+          # restore the line buffer
+          self.buf = saved_buf
+          self.pos = saved_pos
+        else:
+          # show the original buffer
+          self.refresh_line()
+        # navigate through the completions
+        c = ord(os.read(self.ifd, 1))
+        if c == TAB:
+          # loop through the completions
+          idx = (idx + 1) % (len(lc) + 1)
+          if idx == len(lc):
+            beep()
+        elif c == ESC:
+          # re-show the original buffer
+          if idx < len(lc):
+            self.refresh_line()
+          stop = True
+        else:
+          # update the buffer and return
+          if idx < len(lc):
+            self.buf = str2ord(lc[idx])
+            self.pos = len(self.buf)
+          stop = True
+    # return the last character read
+    return c
+
   def __str__(self):
     """return a string for the line buffer"""
     return ''.join([chr(c) for c in self.buf])
@@ -262,11 +320,14 @@ class linenoise(object):
   """terminal state"""
 
   def __init__(self):
-    self.history = []         # list of history strings
-    self.history_maxlen = 32  # maximum number of history entries (default)
-    self.rawmode = False      # are we in raw mode?
-    self.atexit_flag = False  # have we registered a cleanup upon exit function?
-    self.orig_termios = None  # saved termios attributes
+    self.history = []               # list of history strings
+    self.history_maxlen = 32        # maximum number of history entries (default)
+    self.rawmode = False            # are we in raw mode?
+    self.mlmode = False             # are we in multiline mode?
+    self.atexit_flag = False        # have we registered a cleanup upon exit function?
+    self.orig_termios = None        # saved termios attributes
+    self.completion_callback = None # callback function for tab completion
+    self.hints_callback = None      # callback function for hints
 
   def enable_rawmode(self, fd):
     """Enable raw mode"""
@@ -311,7 +372,7 @@ class linenoise(object):
   def edit(self, ifd, ofd, prompt):
     """edit a line in raw mode"""
     # create the line state
-    ls = line_state(ifd, ofd, prompt)
+    ls = line_state(ifd, ofd, prompt, self.mlmode)
     # The latest history entry is always our current buffer, initially an empty string
     self.history_add('')
     # output the prompt
@@ -319,6 +380,17 @@ class linenoise(object):
       return None
     while True:
       c = ord(os.read(ifd, 1))
+
+      # Autocomplete when the callback is set. It returns < 0 when
+      # there was an error reading from fd. Otherwise it will return the
+      # character that should be handled next.
+      if c == TAB and self.completion_callback is not None:
+        c = ls.complete_line(self.completion_callback)
+        if c < 0:
+          return str(ls)
+        if c == 0:
+          continue
+
       if c == ENTER:
         self.history.pop()
         return str(ls)
@@ -473,13 +545,17 @@ class linenoise(object):
     # restore the original mode
     self.disable_rawmode(STDIN_FILENO)
 
-  def set_completion_callback(self, f):
+  def set_completion_callback(self, fn):
     """set the completion callback function"""
-    pass
+    self.completion_callback = fn
 
-  def set_hints_callback(self, f):
+  def set_hints_callback(self, fn):
     """set the hints callback function"""
-    pass
+    self.hints_callback = fn
+
+  def set_multiline(self, mode):
+    """set multiline mode"""
+    self.mlmode = mode
 
   def history_set(self, idx, line):
     """set a history entry by index number"""

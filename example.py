@@ -1,10 +1,13 @@
 #!/usr/bin/python
 
-import linenoise
 import sys
+import linenoise
 
 def completion(s):
-  pass
+  """return a list of line completions"""
+  if len(s) >= 1 and s[0] == 'h':
+    return ('hello', 'hello there')
+  return None
 
 def hints(s):
   if s == 'hello':
@@ -23,7 +26,7 @@ def main():
     idx += 1
     argv = sys.argv[idx]
     if argv == '--multiline':
-      ln.set_multiLine(True)
+      ln.set_multiline(True)
       sys.stdout.write('Multi-line mode enabled.\n')
     elif argv == '--keycodes':
       ln.print_keycodes()

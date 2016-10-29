@@ -10,8 +10,7 @@ See: http://github.com/antirez/linenoise
  * input from unsupported terminals
  * history
  * completions
+ * hints
 
 ## TODO
  * multiline editing
- * hints
-

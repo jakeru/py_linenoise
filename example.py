@@ -11,8 +11,8 @@ def completion(s):
 
 def hints(s):
   if s == 'hello':
-    # color, bold, string
-    return (35, False, ' World')
+    # string, color, bold
+    return (' World', 35, False)
   return None
 
 def main():

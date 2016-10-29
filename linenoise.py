@@ -132,7 +132,7 @@ def unsupported_term():
 class line_state(object):
   """line editing state"""
 
-  def __init__(self, ifd, ofd, prompt, mlmode):
+  def __init__(self, ifd, ofd, prompt, ts):
     self.ifd = ifd                    # stdin file descriptor
     self.ofd = ofd                    # stdout file descriptor
     self.buf = []                     # line buffer
@@ -142,7 +142,36 @@ class line_state(object):
     self.cols = get_columns(ifd, ofd) # number of columns in terminal
     self.maxrows = 0                  # maximum num of rows used so far (multiline mode)
     self.history_idx = 0              # history index we are currently editing, 0 is the LAST entry
-    self.mlmode = mlmode              # are we in multiline mode?
+    self.ts = ts                      # terminal state
+
+  def refresh_show_hints(self):
+    """show hints to the right of the cursor"""
+    if self.ts.hints_callback is None:
+      # no hints
+      return []
+    if len(self.prompt) + len(self.buf) >= self.cols:
+      # no space to display hints
+      return []
+    # get the hint
+    result = self.ts.hints_callback(str(self))
+    if result is None:
+      # no hints
+      return []
+    (hint, color, bold) = result
+    if hint is None or len(hint) == 0:
+      # no hints
+      return []
+    # work out the hint length
+    hlen = min(len(hint), self.cols - len(self.prompt) - len(self.buf))
+    seq = []
+    if bold and color < 0:
+      color = 37
+    if color >= 0 or bold:
+      seq.append('\033[%d;%d;49m' % ((0,1)[bold], color))
+    seq.append(hint[:hlen])
+    if color >= 0 or bold:
+      seq.append('\033[0m')
+    return seq
 
   def refresh_singleline(self):
     """single line refresh"""
@@ -165,7 +194,7 @@ class line_state(object):
     # write the current buffer content
     seq.append(''.join([self.buf[i] for i in range(idx, idx + blen)]))
     # Show hints (if any)
-    # TODO refreshShowHints(&ab,l,plen);
+    seq.extend(self.refresh_show_hints())
     # Erase to right
     seq.append('\x1b[0K')
     # Move cursor to original position
@@ -179,7 +208,7 @@ class line_state(object):
 
   def refresh_line(self):
     """refresh the edit line"""
-    if self.mlmode:
+    if self.ts.mlmode:
       self.refresh_multiline()
     else:
       self.refresh_singleline()
@@ -268,11 +297,11 @@ class line_state(object):
     self.buf = self.buf[:self.pos] + self.buf[old_pos:]
     self.refresh_line()
 
-  def complete_line(self, callback):
+  def complete_line(self):
     """show completions for the current line"""
     c = 0
     # get a list of line completions
-    lc = callback(str(self))
+    lc = self.ts.completion_callback(str(self))
     if lc is None or len(lc) == 0:
       # no line completions
       beep()
@@ -385,7 +414,7 @@ class linenoise(object):
   def edit(self, ifd, ofd, prompt):
     """edit a line in raw mode"""
     # create the line state
-    ls = line_state(ifd, ofd, prompt, self.mlmode)
+    ls = line_state(ifd, ofd, prompt, self)
     # The latest history entry is always our current buffer, initially an empty string
     self.history_add('')
     # output the prompt
@@ -393,19 +422,25 @@ class linenoise(object):
       return None
     while True:
       c = os.read(ifd, 1)
-
       # Autocomplete when the callback is set. It returns < 0 when
       # there was an error reading from fd. Otherwise it will return the
       # character that should be handled next.
       if c == _KEY_TAB and self.completion_callback is not None:
-        c = ls.complete_line(self.completion_callback)
+        c = ls.complete_line()
         if c < 0:
           return str(ls)
         if c == 0:
           continue
-
+      # handle the key code
       if c == _KEY_ENTER:
         self.history.pop()
+        if self.hints_callback:
+          # Refresh the line without hints to leave the
+          # line as the user typed it after the newline.
+          hcb = self.hints_callback
+          self.hints_callback = None
+          ls.refresh_line()
+          self.hints_callback = hcb
         return str(ls)
       elif c == _KEY_BS:
         # backspace: remove the character to the left of the cursor
@@ -645,6 +680,3 @@ class linenoise(object):
       self.history = [l.strip() for l in x]
 
 # -----------------------------------------------------------------------------
-
-
-

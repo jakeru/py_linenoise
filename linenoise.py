@@ -105,7 +105,7 @@ def get_cursor_position(ifd, ofd):
     buf.append(c)
     if buf[-1] == 'R':
       break
-  # parse it: esc [ number : number R (at least 6 characters)
+  # parse it: esc [ number ; number R (at least 6 characters)
   if len(buf) < 6 or buf[0] != _KEY_ESC or buf[1] != '[' or buf[-1] != 'R':
     return -1
   # should have 2 number fields
@@ -525,9 +525,8 @@ class linenoise(object):
       if c == _KEY_NULL:
         # error on read
         return str(ls)
-      # Autocomplete when the callback is set. It returns < 0 when
-      # there was an error reading from fd. Otherwise it will return the
-      # character that should be handled next.
+      # Autocomplete when the callback is set.
+      # It returns the character that should be handled next.
       if c == _KEY_TAB and self.completion_callback is not None:
         c = ls.complete_line()
         if c == _KEY_NULL:
@@ -548,8 +547,7 @@ class linenoise(object):
         ls.edit_backspace()
       elif c == _KEY_ESC:
         if would_block(ifd, _CHAR_TIMEOUT):
-          # looks like a single escape
-          # abandon the line
+          # looks like a single escape- abandon the line
           self.history.pop()
           return ''
         # escape sequence

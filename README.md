@@ -6,6 +6,7 @@ See: http://github.com/antirez/linenoise
 
 ## Done
  * single line editing
+ * multiline editing
  * input from files/pipes
  * input from unsupported terminals
  * history
@@ -13,4 +14,4 @@ See: http://github.com/antirez/linenoise
  * hints
 
 ## TODO
- * multiline editing
+ * ??

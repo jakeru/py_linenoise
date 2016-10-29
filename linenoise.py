@@ -13,6 +13,7 @@ Based on: http://github.com/antirez/linenoise
 import os
 import stat
 import sys
+import select
 import atexit
 import termios
 import struct
@@ -21,6 +22,7 @@ import string
 import logging
 
 # -----------------------------------------------------------------------------
+# logging
 
 _debug_mode = False
 if _debug_mode:
@@ -58,6 +60,8 @@ _STDIN = sys.stdin.fileno()
 _STDOUT = sys.stdout.fileno()
 _STDERR = sys.stderr.fileno()
 
+_CHAR_TIMEOUT = 0.02 # 20 ms
+
 def _getc(fd, timeout=-1):
   """
     read a single character from a file (with timeout)
@@ -65,7 +69,21 @@ def _getc(fd, timeout=-1):
     timeout < 0 : wait for the character (block)
     timeout > 0 : wait for timeout seconds
   """
-  pass
+  # use select() for the timeout
+  if timeout >= 0:
+    (rd, _, _) = select.select((fd,), (), (), timeout)
+    if len(rd) == 0:
+      return _KEY_NULL
+  # read the character
+  c = os.read(fd, 1)
+  if c == '':
+    return _KEY_NULL
+  return c
+
+def would_block(fd, timeout):
+  """if fd is not readable within timeout seconds - return True"""
+  (rd, _, _) = select.select((fd,), (), (), timeout)
+  return len(rd) == 0
 
 # -----------------------------------------------------------------------------
 
@@ -81,14 +99,20 @@ def get_cursor_position(ifd, ofd):
   # rows/cols are decimal number strings
   buf = []
   while len(buf) < 32:
-    buf.append(os.read(ifd, 1))
+    c = _getc(ifd, _CHAR_TIMEOUT)
+    if c == _KEY_NULL:
+      break
+    buf.append(c)
     if buf[-1] == 'R':
       break
-  # parse it
-  if buf[0] != _KEY_ESC or buf[1] != '[' or buf[-1] != 'R':
+  # parse it: esc [ number : number R (at least 6 characters)
+  if len(buf) < 6 or buf[0] != _KEY_ESC or buf[1] != '[' or buf[-1] != 'R':
     return -1
-  buf = buf[2:-1]
-  (_, cols) = ''.join(buf).split(';')
+  # should have 2 number fields
+  x = ''.join(buf[2:-1]).split(';')
+  if len(x) != 2:
+    return -1
+  (_, cols) = x
   # return the cols
   return int(cols, 10)
 
@@ -145,14 +169,14 @@ class line_state(object):
   def __init__(self, ifd, ofd, prompt, ts):
     self.ifd = ifd                    # stdin file descriptor
     self.ofd = ofd                    # stdout file descriptor
-    self.buf = []                     # line buffer
     self.prompt = prompt              # prompt string
-    self.pos = 0                      # current cursor position within line buffer
-    self.oldpos = 0                   # previous refresh cursor position
-    self.cols = get_columns(ifd, ofd) # number of columns in terminal
-    self.maxrows = 0                  # maximum num of rows used so far (multiline mode)
-    self.history_idx = 0              # history index we are currently editing, 0 is the LAST entry
     self.ts = ts                      # terminal state
+    self.history_idx = 0              # history index we are currently editing, 0 is the LAST entry
+    self.buf = []                     # line buffer
+    self.cols = get_columns(ifd, ofd) # number of columns in terminal
+    self.pos = 0                      # current cursor position within line buffer
+    self.oldpos = 0                   # previous refresh cursor position (multiline)
+    self.maxrows = 0                  # maximum num of rows used so far (multiline)
 
   def refresh_show_hints(self):
     """show hints to the right of the cursor"""
@@ -361,7 +385,7 @@ class line_state(object):
 
   def complete_line(self):
     """show completions for the current line"""
-    c = 0
+    c = _KEY_NULL
     # get a list of line completions
     lc = self.ts.completion_callback(str(self))
     if lc is None or len(lc) == 0:
@@ -387,16 +411,30 @@ class line_state(object):
           # show the original buffer
           self.refresh_line()
         # navigate through the completions
-        c = os.read(self.ifd, 1)
-        if c == _KEY_TAB:
+        c = _getc(self.ifd)
+        if c == _KEY_NULL:
+          # error on read
+          stop = True
+        elif c == _KEY_TAB:
           # loop through the completions
           idx = (idx + 1) % (len(lc) + 1)
           if idx == len(lc):
             beep()
         elif c == _KEY_ESC:
-          # re-show the original buffer
-          if idx < len(lc):
-            self.refresh_line()
+          # could be an escape, could be an escape sequence
+          if would_block(self.ifd, _CHAR_TIMEOUT):
+            # nothing more to read, looks like a single escape
+            # re-show the original buffer
+            if idx < len(lc):
+              self.refresh_line()
+            # don't pass the escape key back
+            c = _KEY_NULL
+          else:
+            # probably an escape sequence
+            # update the buffer and return
+            if idx < len(lc):
+              self.buf = list(lc[idx])
+              self.pos = len(self.buf)
           stop = True
         else:
           # update the buffer and return
@@ -483,15 +521,16 @@ class linenoise(object):
     if os.write(ofd, prompt) != len(prompt):
       return None
     while True:
-      c = os.read(ifd, 1)
+      c = _getc(ifd)
+      if c == _KEY_NULL:
+        # error on read
+        return str(ls)
       # Autocomplete when the callback is set. It returns < 0 when
       # there was an error reading from fd. Otherwise it will return the
       # character that should be handled next.
       if c == _KEY_TAB and self.completion_callback is not None:
         c = ls.complete_line()
-        if c < 0:
-          return str(ls)
-        if c == 0:
+        if c == _KEY_NULL:
           continue
       # handle the key code
       if c == _KEY_ENTER:
@@ -508,14 +547,19 @@ class linenoise(object):
         # backspace: remove the character to the left of the cursor
         ls.edit_backspace()
       elif c == _KEY_ESC:
+        if would_block(ifd, _CHAR_TIMEOUT):
+          # looks like a single escape
+          # abandon the line
+          self.history.pop()
+          return ''
         # escape sequence
-        s0 = os.read(ifd, 1)
-        s1 = os.read(ifd, 1)
+        s0 = _getc(ifd, _CHAR_TIMEOUT)
+        s1 = _getc(ifd, _CHAR_TIMEOUT)
         if s0 == '[':
           # ESC [ sequence
           if s1 >= '0' and s1 <= '9':
             # Extended escape, read additional byte.
-            s2 = os.read(ifd, 1)
+            s2 = _getc(ifd, _CHAR_TIMEOUT)
             if s2 == '~':
               if s1 == '3':
                 # delete
@@ -635,8 +679,8 @@ class linenoise(object):
     cmd = [''] * 4
     while True:
       # get a character
-      c = os.read(_STDIN, 1)
-      if c == '':
+      c = _getc(_STDIN)
+      if c == _KEY_NULL:
         continue
       # display the character
       if c in string.printable:

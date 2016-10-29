@@ -21,15 +21,6 @@ import string
 
 # -----------------------------------------------------------------------------
 
-# indices within the termios array
-C_IFLAG = 0
-C_OFLAG = 1
-C_CFLAG = 2
-C_LFLAG = 3
-C_CC = 6
-
-# -----------------------------------------------------------------------------
-
 # Key Codes
 _KEY_NULL = chr(0)
 _KEY_CTRL_A = chr(1)
@@ -65,10 +56,6 @@ def _getc(fd, timeout=-1):
     timeout > 0 : wait for timeout seconds
   """
   pass
-
-def _puts(fd, s):
-  """write a string to a file, return the number of characters written"""
-  return os.write(fd, s)
 
 # -----------------------------------------------------------------------------
 
@@ -270,9 +257,16 @@ class line_state(object):
     self.refresh_line()
 
   def delete_prev_word(self):
-    """delete the previous space delimited word in the line buffer"""
-    # TODO
-    pass
+    """delete the previous space delimited word"""
+    old_pos = self.pos
+    # remove spaces
+    while self.pos > 0 and self.buf[self.pos - 1] == ' ':
+      self.pos -= 1
+    # remove word
+    while self.pos > 0 and self.buf[self.pos - 1] != ' ':
+      self.pos -= 1
+    self.buf = self.buf[:self.pos] + self.buf[old_pos:]
+    self.refresh_line()
 
   def complete_line(self, callback):
     """show completions for the current line"""
@@ -328,6 +322,13 @@ class line_state(object):
 
 # -----------------------------------------------------------------------------
 
+# Indices within the termios array
+_C_IFLAG = 0
+_C_OFLAG = 1
+_C_CFLAG = 2
+_C_LFLAG = 3
+_C_CC = 6
+
 class linenoise(object):
   """terminal state"""
 
@@ -353,17 +354,17 @@ class linenoise(object):
     self.orig_termios = termios.tcgetattr(fd)
     raw = termios.tcgetattr(fd)
     # input modes: no break, no CR to NL, no parity check, no strip char, no start/stop output control
-    raw[C_IFLAG] &= ~(termios.BRKINT | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.IXON)
+    raw[_C_IFLAG] &= ~(termios.BRKINT | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.IXON)
     # output modes - disable post processing
-    raw[C_OFLAG] &= ~(termios.OPOST)
+    raw[_C_OFLAG] &= ~(termios.OPOST)
     # control modes - set 8 bit chars
-    raw[C_CFLAG] |= (termios.CS8)
+    raw[_C_CFLAG] |= (termios.CS8)
     # local modes - echo off, canonical off, no extended functions, no signal chars (^Z,^C)
-    raw[C_LFLAG] &= ~(termios.ECHO | termios.ICANON | termios.IEXTEN | termios.ISIG)
+    raw[_C_LFLAG] &= ~(termios.ECHO | termios.ICANON | termios.IEXTEN | termios.ISIG)
     # control chars - set return condition: min number of bytes and timer.
     # We want read to return every single byte, without timeout.
-    raw[C_CC][termios.VMIN] = 1
-    raw[C_CC][termios.VTIME] = 0
+    raw[_C_CC][termios.VMIN] = 1
+    raw[_C_CC][termios.VTIME] = 0
     # put terminal in raw mode after flushing
     termios.tcsetattr(fd, termios.TCSAFLUSH, raw)
     self.rawmode = True

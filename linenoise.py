@@ -18,6 +18,16 @@ import termios
 import struct
 import fcntl
 import string
+import logging
+
+# -----------------------------------------------------------------------------
+
+_debug_mode = False
+if _debug_mode:
+  logging.basicConfig(filename='linenoise_debug.log',
+                      format='%(asctime)s %(message)s',
+                      datefmt='%Y%m%d %I:%M:%S',
+                      level=logging.DEBUG)
 
 # -----------------------------------------------------------------------------
 
@@ -204,7 +214,59 @@ class line_state(object):
 
   def refresh_multiline(self):
     """multiline refresh"""
-    pass
+    plen = len(self.prompt)
+    old_rows = self.maxrows
+    # cursor position relative to row
+    rpos = (plen + self.oldpos + self.cols) / self.cols
+    # rows used by current buf
+    rows = (plen + len(self.buf) + self.cols - 1) / self.cols
+    # Update maxrows if needed
+    if rows > self.maxrows:
+      self.maxrows = rows
+    seq = []
+    # First step: clear all the lines used before. To do so start by going to the last row.
+    if old_rows - rpos > 0:
+      logging.debug('go down %d' % (old_rows - rpos))
+      seq.append('\x1b[%dB' % (old_rows - rpos))
+    # Now for every row clear it, go up.
+    for j in xrange(old_rows-1):
+      logging.debug('clear+up')
+      seq.append('\r\x1b[0K\x1b[1A')
+    # Clear the top line.
+    logging.debug('clear')
+    seq.append('\r\x1b[0K')
+    # Write the prompt and the current buffer content
+    seq.append(self.prompt)
+    seq.append(str(self))
+    # Show hints (if any)
+    seq.extend(self.refresh_show_hints())
+    # If we are at the very end of the screen with our prompt, we need to
+    # emit a newline and move the prompt to the first column.
+    if self.pos and self.pos == len(self.buf) and (self.pos + plen) % self.cols == 0:
+      logging.debug('<newline>')
+      seq.append('\n\r')
+      rows += 1
+      if rows > self.maxrows:
+        self.maxrows = rows
+    # Move cursor to right position.
+    rpos2 = (plen + self.pos + self.cols) / self.cols # current cursor relative row.
+    logging.debug('rpos2 %d' % rpos2)
+    # Go up till we reach the expected positon.
+    if rows - rpos2 > 0:
+      logging.debug('go-up %d' % (rows - rpos2))
+      seq.append('\x1b[%dA' % (rows - rpos2))
+    # Set column
+    col = (plen + self.pos) % self.cols
+    logging.debug('set col %d' % (1 + col))
+    if col:
+      seq.append('\r\x1b[%dC' % col)
+    else:
+      seq.append('\r')
+    # save the cursor position
+    logging.debug('\n')
+    self.oldpos = self.pos
+    # write it out
+    os.write(self.ofd, ''.join(seq))
 
   def refresh_line(self):
     """refresh the edit line"""

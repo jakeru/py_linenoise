@@ -470,6 +470,7 @@ class linenoise(object):
     self.orig_termios = None        # saved termios attributes
     self.completion_callback = None # callback function for tab completion
     self.hints_callback = None      # callback function for hints
+    self.hotkey = None              # character for hotkey
 
   def enable_rawmode(self, fd):
     """Enable raw mode"""
@@ -511,15 +512,20 @@ class linenoise(object):
     sys.stdout.flush()
     self.disable_rawmode(_STDIN)
 
-  def edit(self, ifd, ofd, prompt):
-    """edit a line in raw mode"""
+  def edit(self, ifd, ofd, prompt, s):
+    """
+    edit a line in raw mode
+    ifd = input fiel descriptor
+    ofd = output file descriptor
+    prompt = line prompt string
+    s = initial line string
+    """
     # create the line state
     ls = line_state(ifd, ofd, prompt, self)
-    # The latest history entry is always our current buffer, initially an empty string
-    self.history_add('')
-    # output the prompt
-    if os.write(ofd, prompt) != len(prompt):
-      return None
+    # set and output the initial line
+    ls.edit_set(s)
+    # The latest history entry is always our current buffer
+    self.history_add(str(ls))
     while True:
       c = _getc(ifd)
       if c == _KEY_NULL:
@@ -532,7 +538,7 @@ class linenoise(object):
         if c == _KEY_NULL:
           continue
       # handle the key code
-      if c == _KEY_ENTER:
+      if c == _KEY_ENTER or c == self.hotkey:
         self.history.pop()
         if self.hints_callback:
           # Refresh the line without hints to leave the
@@ -541,7 +547,7 @@ class linenoise(object):
           self.hints_callback = None
           ls.refresh_line()
           self.hints_callback = hcb
-        return str(ls)
+        return str(ls) + ('', self.hotkey)[c == self.hotkey]
       elif c == _KEY_BS:
         # backspace: remove the character to the left of the cursor
         ls.edit_backspace()
@@ -643,16 +649,16 @@ class linenoise(object):
         # insert the character into the line buffer
         ls.edit_insert(c)
 
-  def read_raw(self, prompt):
+  def read_raw(self, prompt, s):
     """read a line from stdin in raw mode"""
     if self.enable_rawmode(_STDIN) == -1:
       return None
-    s = self.edit(_STDIN, _STDOUT, prompt)
+    s = self.edit(_STDIN, _STDOUT, prompt, s)
     self.disable_rawmode(_STDIN)
     sys.stdout.write('\r\n')
     return s
 
-  def read(self, prompt):
+  def read(self, prompt, s=''):
     """Read a line. Return None on EOF"""
     if not os.isatty(_STDIN):
       # Not a tty. Read from a file/pipe.
@@ -666,7 +672,7 @@ class linenoise(object):
         s = None
       return s
     else:
-      return self.read_raw(prompt)
+      return self.read_raw(prompt, s)
 
   def print_keycodes(self):
     """Print scan codes on screen for debugging/development purposes"""
@@ -708,6 +714,13 @@ class linenoise(object):
   def set_multiline(self, mode):
     """set multiline mode"""
     self.mlmode = mode
+
+  def set_hotkey(self, key):
+    """
+    Set the hotkey. A hotkey will cause line editing to exit.
+    The hotkey will be appended to the line buffer but not displayed.
+    """
+    self.hotkey = key
 
   def history_set(self, idx, line):
     """set a history entry by index number"""
@@ -777,7 +790,7 @@ class linenoise(object):
   def history_load(self, fname):
     """Load history from a file"""
     self.history = []
-    if os.path.isfile(fname):
+    if fname and os.path.isfile(fname):
       f = open(fname, 'r')
       x = f.readlines()
       f.close()

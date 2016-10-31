@@ -3,6 +3,8 @@
 import sys
 import linenoise
 
+_KEY_HOTKEY = '?'
+
 def completion(s):
   """return a list of line completions"""
   if len(s) >= 1 and s[0] == 'h':
@@ -40,13 +42,17 @@ def main():
   ln.set_completion_callback(completion)
   ln.set_hints_callback(hints)
 
-  # Load history from file. The history file is just a plain text file
+  # Load history from file. The history file is a plain text file
   # where entries are separated by newlines.
   ln.history_load('history.txt')
 
-  # Now this is the main loop of the typical linenoise-based application.
-  # The call to linenoise() will block until the user types something
-  # and presses enter.
+  # Set a hotkey. A hotkey will cause the line editing to exit. The hotkey
+  # will be appended to the returned line buffer but not displayed.
+  ln.set_hotkey(_KEY_HOTKEY)
+
+  # This is the main loop of a typical linenoise-based application.
+  # The call to read() will block until the user types something
+  # and presses enter or a hotkey.
   while True:
     line = ln.read('hello> ')
     if line is None:
@@ -63,6 +69,8 @@ def main():
         print('unrecognized command: %s' % line)
     elif len(line):
       print("echo: '%s'" % line)
+      if line.endswith(_KEY_HOTKEY):
+        line = line[:-1]
       ln.history_add(line)
       ln.history_save("history.txt")
 

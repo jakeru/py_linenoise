@@ -25,4 +25,6 @@ The GNU readline library is a standard package in Python, but sometimes it's har
  * How do you have a hot key exit the line editing so you can offer context sensitive help?
  * How do you call a polling function during line editing so you can check for other things?
 
-Having a simple, hackable, native Python implementation of line editing makes these things much easier. 
+Having a simple, hackable, native Python implementation of line editing makes these things much easier.
+The linenoise library in C already offers a simple alternative.
+Porting these functions to Python makes it even easier to use on any system with a POSIX compatible terminal environment.

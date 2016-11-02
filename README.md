@@ -16,6 +16,7 @@ See: http://github.com/antirez/linenoise
 ## Other Features
  * Line buffer initialization: Set an initial buffer string for editing.
  * Hot keys: Set a special hot key for exiting line editing.
+ * Loop Functions: Call a function in a loop until an exit key is pressed.
  
 ## Motiviation
 
@@ -24,6 +25,3 @@ See: http://github.com/antirez/linenoise
 
 These things might be possible in C but the Python readline packaging makes it difficult.
 Having a simple/native Python implementation of line editing makes these things much easier. 
-
-
-

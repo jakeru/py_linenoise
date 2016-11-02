@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import sys
+import time
 import linenoise
 
 _KEY_HOTKEY = '?'
@@ -12,10 +13,22 @@ def completion(s):
   return None
 
 def hints(s):
+  """return the hints for this command"""
   if s == 'hello':
     # string, color, bold
     return (' World', 35, False)
   return None
+
+loop_idx = 0
+_LOOPS = 10
+
+def loop():
+  """example loop function - return True on completion"""
+  global loop_idx
+  sys.stdout.write('loop index %d/%d\r\n' % (loop_idx, _LOOPS))
+  time.sleep(0.5)
+  loop_idx += 1
+  return loop_idx > _LOOPS
 
 def main():
   ln = linenoise.linenoise()
@@ -33,8 +46,13 @@ def main():
     elif argv == '--keycodes':
       ln.print_keycodes()
       sys.exit(0)
+    elif argv == '--loop':
+      print('looping: press ctrl-d to exit')
+      rc = ln.loop(loop)
+      print(('early exit of loop', 'loop completed')[rc])
+      sys.exit(0)
     else:
-      sys.stderr.write('Usage: %s [--multiline] [--keycodes]\n' % sys.argv[0])
+      sys.stderr.write('Usage: %s [--multiline] [--keycodes] [--loop]\n' % sys.argv[0])
       sys.exit(1)
 
   # Set the completion callback. This will be called

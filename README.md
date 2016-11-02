@@ -20,8 +20,9 @@ See: http://github.com/antirez/linenoise
  
 ## Motiviation
 
+The GNU readline library is a standard package in Python, but sometimes it's hard to use:
+
  * How do you have a hot key exit the line editing so you can offer context sensitive help?
  * How do you call a polling function during line editing so you can check for other things?
 
-These things might be possible in C but the Python readline packaging makes it difficult.
-Having a simple/native Python implementation of line editing makes these things much easier. 
+Having a simple, hackable, native Python implementation of line editing makes these things much easier. 

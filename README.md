@@ -17,7 +17,17 @@ See: http://github.com/antirez/linenoise
  * Line buffer initialization: Set an initial buffer string for editing.
  * Hot keys: Set a special hot key for exiting line editing.
  * Loop Functions: Call a function in a loop until an exit key is pressed.
- 
+
+## Examples
+
+### example1.py
+
+Matches the example code in the C version of the linenoise library.
+
+### example2.py
+
+Implement a heirarchical command line interface using the linenoise library.
+
 ## Motiviation
 
 The GNU readline library is a standard package in Python, but sometimes it's hard to use:

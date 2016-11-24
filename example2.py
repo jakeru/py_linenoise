@@ -4,6 +4,7 @@
 
 import sys
 import cli
+import time
 
 # -----------------------------------------------------------------------------
 # cli related leaf functions
@@ -23,9 +24,24 @@ def cmd_exit(ui, args):
 # -----------------------------------------------------------------------------
 # application leaf functions
 
+loop_idx = 0
+_LOOPS = 10
+
+def loop(ui):
+  """example loop function - return True on completion"""
+  global loop_idx
+  sys.stdout.write('loop index %d/%d\r\n' % (loop_idx, _LOOPS))
+  time.sleep(0.5)
+  loop_idx += 1
+  return loop_idx > _LOOPS
+
 def a0_func(ui, args):
   """a0 function description"""
+  global cli, loop_idx
   ui.put('a0 function arguments %s\n' % str(args))
+  ui.put('Looping... Ctrl-D to exit\n')
+  loop_idx = 0
+  cli.ln.loop(lambda : loop(ui))
 
 def a1_func(ui, args):
   """a1 function description"""

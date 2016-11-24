@@ -6,6 +6,7 @@ import sys
 import cli
 
 # -----------------------------------------------------------------------------
+# cli related leaf functions
 
 def cmd_help(ui, args):
   """general help"""
@@ -20,12 +21,7 @@ def cmd_exit(ui, args):
   cli.exit()
 
 # -----------------------------------------------------------------------------
-
-argument_help = (
-    ('arg0', ' arg0 description'),
-    ('arg1', ' arg1 description'),
-    ('arg2', ' arg2 description'),
-)
+# application leaf functions
 
 def a0_func(ui, args):
   """a0 function description"""
@@ -59,27 +55,49 @@ def c2_func(ui, args):
   """c2 function description"""
   ui.put('c2 function arguments %s\n' % str(args))
 
+# -----------------------------------------------------------------------------
+"""
+Menu Tree
+
+(name, submenu, description) - reference to submenu
+(name, leaf) - leaf command with generic <cr> help
+(name, leaf, help) - leaf command with specific argument help
+
+Note: The general help for a leaf function is the docstring for the leaf function.
+"""
+
+# example of function argument help (parm, descr)
+argument_help = (
+  ('arg0', 'arg0 description'),
+  ('arg1', 'arg1 description'),
+  ('arg2', 'arg2 description'),
+)
+
+# 'a' submenu items
 a_menu = (
   ('a0', a0_func, argument_help),
   ('a1', a1_func, argument_help),
   ('a2', a2_func),
 )
 
+# 'b' submenu items
 b_menu = (
   ('b0', b0_func, argument_help),
   ('b1', b1_func),
 )
 
+# 'c' submenu items
 c_menu = (
   ('c0', c0_func, argument_help),
   ('c1', c1_func, argument_help),
   ('c2', c2_func),
 )
 
+# root menu
 menu_root = (
-  ('a', a_menu, 'a functions'),
-  ('b', b_menu, 'b functions'),
-  ('c', c_menu, 'c functions'),
+  ('amenu', a_menu, 'menu a functions'),
+  ('bmenu', b_menu, 'menu b functions'),
+  ('cmenu', c_menu, 'menu c functions'),
   ('exit', cmd_exit),
   ('help', cmd_help),
   ('history', cmd_history, cli.history_help),
@@ -88,17 +106,21 @@ menu_root = (
 # -----------------------------------------------------------------------------
 
 class user_interface(object):
-
+  """
+  Each leaf function is called with an instance of this object.
+  The user can extend this class with application specific functions.
+  """
   def __init__(self):
     pass
 
   def put(self, s):
+    """print a string to stdout"""
     sys.stdout.write(s)
 
 # -----------------------------------------------------------------------------
 
-ui = user_interface()
-cli = cli.cli(ui, 'history.txt')
+# setup the cli object
+cli = cli.cli(user_interface(), 'history.txt')
 cli.set_root(menu_root)
 cli.set_prompt('cli> ')
 

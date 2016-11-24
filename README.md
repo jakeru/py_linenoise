@@ -26,7 +26,7 @@ Matches the example code in the C version of the linenoise library.
 
 ### example2.py
 
-Implement a heirarchical command line interface using the linenoise library.
+Implements a heirarchical command line interface using cli.py and the linenoise library.
 
 ## Motiviation
 

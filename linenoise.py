@@ -400,7 +400,7 @@ class line_state(object):
       idx = 0
       while not stop:
         if idx < len(lc):
-          # show the completion
+          # save the line buffer
           saved_buf = self.buf
           saved_pos = self.pos
           # show the completion

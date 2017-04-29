@@ -204,7 +204,7 @@ class line_state(object):
     if bold and color < 0:
       color = 37
     if color >= 0 or bold:
-      seq.append('\033[%d;%d;49m' % ((0,1)[bold], color))
+      seq.append('\033[%d;%d;49m' % ((0, 1)[bold], color))
     seq.append(hint[:hlen])
     if color >= 0 or bold:
       seq.append('\033[0m')

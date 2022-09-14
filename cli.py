@@ -77,7 +77,7 @@ def split_index(s):
 
 #-----------------------------------------------------------------------------
 
-class cli(object):
+class cli:
   """command line interface"""
 
   def __init__(self, ui, history=None):

@@ -166,7 +166,7 @@ def unsupported_term():
 
 # -----------------------------------------------------------------------------
 
-class line_state(object):
+class line_state:
   """line editing state"""
 
   def __init__(self, ifd, ofd, prompt, ts):
@@ -461,7 +461,7 @@ _C_CFLAG = 2
 _C_LFLAG = 3
 _C_CC = 6
 
-class linenoise(object):
+class linenoise:
   """terminal state"""
 
   def __init__(self):
@@ -612,7 +612,7 @@ class linenoise(object):
       elif c == _KEY_CTRL_D:
         # delete: remove the character to the right of the cursor.
         # If the line is empty act as an EOF.
-        if len(ls.buf):
+        if len(ls.buf) != 0:
           ls.edit_delete()
         else:
           self.history.pop()
@@ -667,15 +667,14 @@ class linenoise(object):
       # Not a tty. Read from a file/pipe.
       s = sys.stdin.readline().strip('\n')
       return (s, None)[s == '']
-    elif unsupported_term():
+    if unsupported_term():
       # Not a terminal we know about, so basic line reading.
       try:
-        s = raw_input(prompt)
+        s = input(prompt)
       except EOFError:
         s = None
       return s
-    else:
-      return self.read_raw(prompt, s)
+    return self.read_raw(prompt, s)
 
   def loop(self, fn, exit_key=_KEY_CTRL_D):
     """
@@ -787,7 +786,7 @@ class linenoise(object):
     if self.history_maxlen == 0:
       return
     # don't re-add the last entry
-    if len(self.history) and line == self.history[-1]:
+    if len(self.history) != 0 and line == self.history[-1]:
       return
     # add the line to the history
     if len(self.history) == self.history_maxlen:

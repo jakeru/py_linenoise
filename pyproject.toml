@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "py_linenoise"
+version = "1.0.0"
+description = "A port of linenoise to Python (because sometimes readline doesn't cut it...)"
+requires-python = ">=3.8"
+authors = [
+  { name = "Jason Harris", email = "sirmanlypowers@gmail.com" }
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+keywords = [
+  "linenoise",
+]
+classifiers = [
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Terminals",
+]
+
+[tool.hatch.build]
+only-include = ["linenoise.py"]

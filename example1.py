@@ -1,5 +1,12 @@
 #!/usr/bin/python3
 
+"""
+example1.py - basic demonstration of linenoise functions.
+
+See: https://github.com/deadsy/py_linenoise
+
+"""
+
 import sys
 import time
 import linenoise
@@ -29,13 +36,14 @@ _LOOPS = 10
 def loop():
     """example loop function - return True on completion"""
     global loop_idx
-    sys.stdout.write("loop index %d/%d\r\n" % (loop_idx, _LOOPS))
+    sys.stdout.write(f"loop index {loop_idx}/{_LOOPS}\r\n")
     time.sleep(0.5)
     loop_idx += 1
     return loop_idx > _LOOPS
 
 
 def main():
+    """entry point- demonstration of linenoise functions"""
     ln = linenoise.linenoise()
 
     # Parse options
@@ -57,7 +65,7 @@ def main():
             print(("early exit of loop", "loop completed")[rc])
             sys.exit(0)
         else:
-            sys.stderr.write("Usage: %s [--multiline] [--keycodes] [--loop]\n" % sys.argv[0])
+            sys.stderr.write(f"Usage: {sys.argv[0]} [--multiline] [--keycodes] [--loop]\n")
             sys.exit(1)
 
     # Set the completion callback. This will be called
@@ -80,7 +88,7 @@ def main():
         line = ln.read("hello> ")
         if line is None:
             break
-        elif line.startswith("/"):
+        if line.startswith("/"):
             if line.startswith("/historylen"):
                 l = line.split(" ")
                 if len(l) >= 2:
@@ -89,9 +97,9 @@ def main():
                 else:
                     print("no history length")
             else:
-                print("unrecognized command: %s" % line)
+                print(f"unrecognized command: {line}")
         elif len(line):
-            print("echo: '%s'" % line)
+            print(f"echo: '{line}'")
             if line.endswith(_KEY_HOTKEY):
                 line = line[:-1]
             ln.history_add(line)

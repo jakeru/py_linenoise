@@ -244,9 +244,9 @@ class line_state:
     plen = len(self.prompt)
     old_rows = self.maxrows
     # cursor position relative to row
-    rpos = (plen + self.oldpos + self.cols) / self.cols
+    rpos = (plen + self.oldpos + self.cols) // self.cols
     # rows used by current buf
-    rows = (plen + len(self.buf) + self.cols - 1) / self.cols
+    rows = (plen + len(self.buf) + self.cols - 1) // self.cols
     # Update maxrows if needed
     if rows > self.maxrows:
       self.maxrows = rows
@@ -256,7 +256,7 @@ class line_state:
       logging.debug('go down %d' % (old_rows - rpos))
       seq.append('\x1b[%dB' % (old_rows - rpos))
     # Now for every row clear it, go up.
-    for j in range(int(old_rows-1)):
+    for j in range(old_rows-1):
       logging.debug('clear+up')
       seq.append('\r\x1b[0K\x1b[1A')
     # Clear the top line.
@@ -267,8 +267,8 @@ class line_state:
     seq.append(str(self))
     # Show hints (if any)
     seq.extend(self.refresh_show_hints())
-    # If we are at the very end of the screen with our prompt, we need to
-    # emit a newline and move the prompt to the first column.
+    # If we are at the very end of the screen with our cursor, we need to
+    # emit a newline and move the cursor to the first column.
     if self.pos and self.pos == len(self.buf) and (self.pos + plen) % self.cols == 0:
       logging.debug('<newline>')
       seq.append('\n\r')
@@ -276,9 +276,9 @@ class line_state:
       if rows > self.maxrows:
         self.maxrows = rows
     # Move cursor to right position.
-    rpos2 = (plen + self.pos + self.cols) / self.cols # current cursor relative row.
+    rpos2 = (plen + self.pos + self.cols) // self.cols # current cursor relative row.
     logging.debug('rpos2 %d' % rpos2)
-    # Go up till we reach the expected positon.
+    # Go up till we reach the expected position.
     if rows - rpos2 > 0:
       logging.debug('go-up %d' % (rows - rpos2))
       seq.append('\x1b[%dA' % (rows - rpos2))

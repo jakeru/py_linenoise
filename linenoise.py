@@ -267,8 +267,8 @@ class line_state:
     seq.append(str(self))
     # Show hints (if any)
     seq.extend(self.refresh_show_hints())
-    # If we are at the very end of the screen with our prompt, we need to
-    # emit a newline and move the prompt to the first column.
+    # If we are at the very end of the screen with our cursor, we need to
+    # emit a newline and move the cursor to the first column.
     if self.pos and self.pos == len(self.buf) and (self.pos + plen) % self.cols == 0:
       logging.debug('<newline>')
       seq.append('\n\r')
@@ -278,7 +278,7 @@ class line_state:
     # Move cursor to right position.
     rpos2 = (plen + self.pos + self.cols) // self.cols # current cursor relative row.
     logging.debug('rpos2 %d' % rpos2)
-    # Go up till we reach the expected positon.
+    # Go up till we reach the expected position.
     if rows - rpos2 > 0:
       logging.debug('go-up %d' % (rows - rpos2))
       seq.append('\x1b[%dA' % (rows - rpos2))

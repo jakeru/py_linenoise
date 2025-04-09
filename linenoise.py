@@ -322,12 +322,12 @@ class line_state:
         # write it out
         _puts(self.ofd, "".join(seq))
 
-    def refresh_line(self):
+    def refresh_line(self, clear=True):
         """refresh the edit line"""
         if self.ts.mlmode:
-            self.refresh_multiline(clear=True, write=True)
+            self.refresh_multiline(clear=clear, write=True)
         else:
-            self.refresh_singleline(clear=True, write=True)
+            self.refresh_singleline(clear=clear, write=True)
 
     def hide(self):
         """hide the edit line"""
@@ -377,12 +377,12 @@ class line_state:
                 self.pos += 1
             self.refresh_line()
 
-    def edit_set(self, s):
+    def edit_set(self, s, pos = None):
         """set the line buffer to a string"""
         if s is None:
             return
         self.buf = list(s)
-        self.pos = len(self.buf)
+        self.pos = len(self.buf) if pos is None else pos
         self.refresh_line()
 
     def edit_move_left(self):
@@ -639,10 +639,10 @@ class linenoise:
                     else:
                         if s1 == "A":
                             # cursor up
-                            ls.edit_set(self.history_prev(ls))
+                            self.history_prev(ls)
                         elif s1 == "B":
                             # cursor down
-                            ls.edit_set(self.history_next(ls))
+                            self.history_next(ls)
                         elif s1 == "C":
                             # cursor right
                             ls.edit_move_right()
@@ -699,10 +699,10 @@ class linenoise:
                 ls.refresh_line()
             elif c == _KEY_CTRL_N:
                 # next history item
-                ls.edit_set(self.history_next(ls))
+                self.history_next(ls)
             elif c == _KEY_CTRL_P:
                 # previous history item
-                ls.edit_set(self.history_prev(ls))
+                self.history_prev(ls)
             elif c == _KEY_CTRL_T:
                 # swap current character with the previous
                 ls.edit_swap()
@@ -859,7 +859,7 @@ class linenoise:
         return self.history
 
     def history_next(self, ls):
-        """return next history item"""
+        """Show next history item"""
         if len(self.history) == 0:
             return None
         # update the current history entry with the line buffer
@@ -868,10 +868,10 @@ class linenoise:
         # next history item
         if ls.history_idx < 0:
             ls.history_idx = 0
-        return self.history_get(ls.history_idx)
+        ls.edit_set(self.history_get(ls.history_idx))
 
     def history_prev(self, ls):
-        """return previous history item"""
+        """Show previous history item"""
         if len(self.history) == 0:
             return None
         # update the current history entry with the line buffer
@@ -880,7 +880,7 @@ class linenoise:
         # previous history item
         if ls.history_idx >= len(self.history):
             ls.history_idx = len(self.history) - 1
-        return self.history_get(ls.history_idx)
+        ls.edit_set(self.history_get(ls.history_idx))
 
     def history_add(self, line):
         """Add a new entry to the history"""
@@ -889,10 +889,10 @@ class linenoise:
         # don't re-add the last entry
         if len(self.history) != 0 and line == self.history[-1]:
             return
-        # add the line to the history
         if len(self.history) == self.history_maxlen:
             # remove the first entry
             self.history.pop(0)
+        # add the line to the history
         self.history.append(line)
 
     def history_set_maxlen(self, n):

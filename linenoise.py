@@ -409,6 +409,29 @@ class line_state:
             self.pos = len(self.buf)
             self.refresh_line()
 
+    def edit_move_word_left(self):
+        """move to the beginning of current or previous word"""
+        pos = self.pos
+        while pos > 0 and self.buf[pos-1].isspace():
+            pos -= 1
+        while pos > 0 and not self.buf[pos-1].isspace():
+            pos -= 1
+        if pos != self.pos:
+            self.pos = pos
+            self.refresh_line()
+
+
+    def edit_move_word_right(self):
+        """move to the beginning of next word"""
+        pos = self.pos
+        while pos < len(self.buf) and not self.buf[pos].isspace():
+            pos += 1
+        while pos < len(self.buf) and self.buf[pos].isspace():
+            pos += 1
+        if pos != self.pos:
+            self.pos = pos
+            self.refresh_line()
+
     def delete_line(self):
         """delete the line"""
         self.buf = []
@@ -636,6 +659,17 @@ class linenoise:
                             if s1 == "3":
                                 # delete
                                 ls.edit_delete()
+                        elif s2 == ";":
+                            s3 = _getc(ifd, _CHAR_TIMEOUT)
+                            s4 = _getc(ifd, _CHAR_TIMEOUT)
+                            if s3 == "5":
+                                if s4 == "C":
+                                     # ctrl + right
+                                     ls.edit_move_word_right()
+                                elif s4 == "D":
+                                     # ctrl + left
+                                     ls.edit_move_word_left()
+
                     else:
                         if s1 == "A":
                             # cursor up
